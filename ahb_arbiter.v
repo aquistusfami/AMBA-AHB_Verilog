@@ -40,67 +40,68 @@ module ahb_arbiter #(
     wire [NUM_MASTERS-1:0] mask;
     wire [NUM_MASTERS-1:0] masked_req;
     wire [NUM_MASTERS-1:0] active_req;
-    wire [NUM_MASTERS-1:0] next_grant_oh; // One-hot vector cho Next Grant
+    wire [NUM_MASTERS-1:0] next_grant_oh; 
     reg  [3:0]             next_master_id;
-    wire                   error_or_retry;
+    
+    wire error_or_retry;
+    wire is_fixed_burst;
+    wire is_burst_start;
 
     //--------------------------------------------------------------------------
     // 1. QUẢN LÝ BURST & NGOẠI LỆ (BEAT COUNTER & HRESP)
     //--------------------------------------------------------------------------
-    assign error_or_retry = (HRESP != RESP_OKAY); // Slave báo lỗi hoặc Retry
+    assign error_or_retry = (HRESP != RESP_OKAY); 
+
+    // Nhận diện ngay lập tức khoảnh khắc bắt đầu một gói Burst cố định
+    assign is_fixed_burst = (HBURST == 3'b011 || HBURST == 3'b101 || HBURST == 3'b111);
+    assign is_burst_start = (HTRANS == TR_NONSEQ) && is_fixed_burst;
 
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
             beat_cnt     <= 4'd0;
             burst_active <= 1'b0;
         end else if (error_or_retry) begin
-            // Ngoại lệ: Nếu Slave báo lỗi/retry -> Lập tức bẻ gãy Burst
+            // Hủy Burst ngay lập tức nếu có lỗi
             beat_cnt     <= 4'd0;
             burst_active <= 1'b0;
         end else if (HREADY) begin
-            if (HTRANS == TR_NONSEQ) begin
-                // Bắt đầu một giao dịch mới, nạp số nhịp đếm dựa trên HBURST
+            if (is_burst_start) begin
+                // Bắt đầu giao dịch: Nạp số nhịp CẦN GIỮ (Trừ đi nhịp NONSEQ và nhịp SEQ cuối)
                 case (HBURST)
-                    3'b011: begin beat_cnt <= 4'd3;  burst_active <= 1'b1; end // INCR4 / WRAP4
-                    3'b101: begin beat_cnt <= 4'd7;  burst_active <= 1'b1; end // INCR8 / WRAP8
-                    3'b111: begin beat_cnt <= 4'd15; burst_active <= 1'b1; end // INCR16 / WRAP16
-                    default:begin beat_cnt <= 4'd0;  burst_active <= 1'b0; end // SINGLE hoặc INCR vô hạn
+                    3'b011: begin beat_cnt <= 4'd2;  burst_active <= 1'b1; end // INCR4
+                    3'b101: begin beat_cnt <= 4'd6;  burst_active <= 1'b1; end // INCR8
+                    3'b111: begin beat_cnt <= 4'd14; burst_active <= 1'b1; end // INCR16
+                    default:begin beat_cnt <= 4'd0;  burst_active <= 1'b0; end 
                 endcase
-            end else if (HTRANS == TR_SEQ && burst_active) begin
-                // Đang truyền gói Burst, giảm bộ đếm
-                if (beat_cnt > 4'd1) begin
-                    beat_cnt <= beat_cnt - 1'b1;
-                end else begin
-                    beat_cnt <= 4'd0;
-                    burst_active <= 1'b0; // Hoàn tất gói Burst
+            end else if (burst_active) begin
+                // Chỉ trừ bộ đếm khi Master thực sự truyền tiếp (SEQ). 
+                // Nếu Master chèn BUSY, bộ đếm không giảm.
+                if (HTRANS == TR_SEQ) begin
+                    if (beat_cnt > 4'd0) begin
+                        beat_cnt <= beat_cnt - 1'b1;
+                    end else begin
+                        burst_active <= 1'b0; // Đã giữ đủ nhịp, mở khóa cho Arbiter
+                    end
                 end
             end
         end
     end
 
     //--------------------------------------------------------------------------
-    // 2. LOGIC TỔ HỢP TÌM MASTER TIẾP THEO (KHÔNG DÙNG VÒNG LẶP FOR)
+    // 2. LOGIC TỔ HỢP TÌM MASTER TIẾP THEO (ROUND-ROBIN)
     //--------------------------------------------------------------------------
-    // Tạo mặt nạ (mask) để che đi các Master có độ ưu tiên thấp (nhỏ hơn hoặc bằng last_master)
     assign mask = ~((1 << (last_master + 1)) - 1);
-    
-    // Áp dụng mặt nạ vào yêu cầu hiện tại
     assign masked_req = HBUSREQ & mask;
-    
-    // Nếu vùng ưu tiên cao có yêu cầu -> dùng masked_req, ngược lại vòng lại quét từ đầu (HBUSREQ)
     assign active_req = (|masked_req) ? masked_req : HBUSREQ;
-    
-    // Mạch Priority Encoder siêu tốc bằng phép toán bit: Cô lập bit 1 ngoài cùng bên phải (LSB)
     assign next_grant_oh = active_req & ~(active_req - 1);
 
-    // Chuyển đổi One-hot sang Binary ID (Bộ giải mã thuần túy)
     always @(*) begin
         case (next_grant_oh)
             4'b0001: next_master_id = 4'd0;
             4'b0010: next_master_id = 4'd1;
             4'b0100: next_master_id = 4'd2;
             4'b1000: next_master_id = 4'd3;
-            default: next_master_id = DEFAULT_MASTER; // Default Master Fallback
+            default: next_master_id = DEFAULT_MASTER; 
         endcase
     end
 
@@ -110,9 +111,10 @@ module ahb_arbiter #(
     reg [3:0] final_next_master;
 
     always @(*) begin
-        // Kiểm tra Lớp 1: Khóa (HLOCK) hoặc Đang trong gói Burst (burst_active)
-        if (!error_or_retry && (HLOCK[HMASTER] || burst_active || HTRANS == TR_BUSY)) begin
-            final_next_master = HMASTER; // Giữ chặt Bus
+        // Kiểm tra Lớp 1: Khóa cứng Bus 
+        // Đã thêm is_burst_start để khóa ngay tại chu kỳ NONSEQ
+        if (!error_or_retry && (HLOCK[HMASTER] || burst_active || is_burst_start || HTRANS == TR_BUSY)) begin
+            final_next_master = HMASTER; // Giữ chặt Bus ở Master hiện tại
         end 
         // Kiểm tra Lớp 2 & 3: Round-Robin hoặc Default Master
         else begin
@@ -131,13 +133,16 @@ module ahb_arbiter #(
             HGRANT      <= (1 << DEFAULT_MASTER);
             HMASTLOCK   <= 1'b0;
         end else begin
-            // HGRANT luôn được "Dự báo trước" và xuất ra ngay để Master kịp chuẩn bị địa chỉ
-            if (HREADY || error_or_retry) begin
+            // FIX: HGRANT luôn được cập nhật độc lập, không bị chặn bởi HREADY
+            // Giúp Master biết trước quyền để kịp đưa địa chỉ ra Bus
+            if (!error_or_retry) begin
                 HGRANT <= (1 << final_next_master);
+            end else begin
+                HGRANT <= (1 << DEFAULT_MASTER); // Thu hồi quyền lập tức nếu có lỗi
             end
 
-            // HMASTER chỉ thay đổi ở nhịp HREADY == 1 (Bảo vệ Pipelining)
-            if (HREADY) begin
+            // HMASTER (Data Phase) CHỈ thay đổi ở nhịp HREADY == 1
+            if (HREADY || error_or_retry) begin
                 last_master <= final_next_master;
                 HMASTER     <= final_next_master;
                 HMASTLOCK   <= HLOCK[final_next_master];
