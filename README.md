@@ -6,3 +6,14 @@ Mô tả ngắn: AHB (Advanced High-performance Bus) thiết kế theo chuẩn A
 * Hoàng Chí Kiệt - 202418929
 * Lê Thanh Mai - 202418940
 * Nguyễn Văn Thế - 202418988
+
+## 2. Cấu trúc thư mục
+
+```
+AMBA-AHB_Verilog/
+├── rtl/             # Source Verilog (ahb_arbiter.v, ...)
+├── tb/              # Testbench
+└── README.md
+```
+
+
