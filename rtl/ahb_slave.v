@@ -1,249 +1,229 @@
 // =============================================================================
-// Module : ahb_master.v
-// Description : AHB-Lite Master với FSM điều khiển luồng tạo địa chỉ/dữ liệu
+// Module : ahb_slave.v
+// Description : AHB-Lite Slave với Dummy RAM (giả lập bộ nhớ)
 //               Tuân theo AMBA AHB Specification Rev 2.0 (ARM IHI0011A)
 //
-// FSM States:
-//   IDLE      - Không có transfer, HTRANS = IDLE (2'b00)
-//   ADDR      - Phase địa chỉ: broadcast HADDR, HWRITE, HSIZE, HBURST, HTRANS
-//   DATA_WR   - Phase dữ liệu ghi: drive HWDATA, chờ HREADY
-//   DATA_RD   - Phase dữ liệu đọc: đọc HRDATA khi HREADY HIGH
-//   WAIT      - Slave chèn wait state (HREADY = LOW)
-//   ERROR     - Slave trả về HRESP = ERROR
+// Tính năng:
+//   - Bộ nhớ giả lập 1KB (256 x 32-bit words)
+//   - Hỗ trợ Byte / Halfword / Word access
+//   - Trả về HRESP = OKAY cho địa chỉ hợp lệ
+//   - Trả về HRESP = ERROR (2-cycle) cho địa chỉ ngoài vùng (Section 3.9.3)
+//   - Có thể cấu hình wait state qua parameter WAIT_STATES
+//   - HSEL-aware: chỉ phản hồi khi được chọn
 // =============================================================================
 
-module ahb_master (
+module ahb_slave #(
+    parameter MEM_DEPTH  = 256,      // Số words 32-bit (= 1KB)
+    parameter BASE_ADDR  = 32'h0000_0000,
+    parameter WAIT_STATES = 0        // Số wait state (0 = zero-wait)
+)(
     // Clock & Reset
-    input  wire        HCLK,        // Bus clock
-    input  wire        HRESETn,     // Active-low synchronous reset
+    input  wire        HCLK,
+    input  wire        HRESETn,
 
-    // AHB Master Outputs (to bus)
-    output reg  [31:0] HADDR,       // Address bus (32-bit)
-    output reg  [1:0]  HTRANS,      // Transfer type: IDLE/BUSY/NONSEQ/SEQ
-    output reg         HWRITE,      // 1=Write, 0=Read
-    output reg  [2:0]  HSIZE,       // Transfer size: 000=Byte, 001=HW, 010=Word
-    output reg  [2:0]  HBURST,      // Burst type
-    output reg  [3:0]  HPROT,       // Protection control
-    output reg  [31:0] HWDATA,      // Write data bus
+    // AHB Slave Inputs
+    input  wire        HSEL,         // Slave select từ decoder
+    input  wire [31:0] HADDR,        // Address
+    input  wire        HWRITE,       // 1=Write, 0=Read
+    input  wire [2:0]  HSIZE,        // Transfer size
+    input  wire [2:0]  HBURST,       // Burst type (slave cần để xử lý wrap)
+    input  wire [1:0]  HTRANS,       // Transfer type
+    input  wire [3:0]  HPROT,        // Protection (slave có thể ignore)
+    input  wire [31:0] HWDATA,       // Write data (valid 1 cycle sau address)
+    input  wire        HREADY_IN,    // HREADY từ bus (slave dùng để sample addr)
 
-    // AHB Master Inputs (from bus)
-    input  wire [31:0] HRDATA,      // Read data bus
-    input  wire        HREADY,      // 1=Transfer complete, 0=Wait state
-    input  wire [1:0]  HRESP,       // Response: OKAY/ERROR/RETRY/SPLIT
-
-    // Control Interface (từ logic bên ngoài điều khiển master)
-    input  wire        start,       // Pulse để bắt đầu 1 transfer
-    input  wire [31:0] addr_in,     // Địa chỉ muốn truy cập
-    input  wire        write_in,    // 1=Write, 0=Read
-    input  wire [31:0] wdata_in,    // Dữ liệu ghi
-    input  wire [2:0]  size_in,     // Kích thước transfer
-
-    // Status Outputs
-    output reg  [31:0] rdata_out,   // Dữ liệu đọc về
-    output reg         done,        // Transfer hoàn thành (1 cycle pulse)
-    output reg         error_out    // Có lỗi từ slave
+    // AHB Slave Outputs
+    output reg  [31:0] HRDATA,       // Read data
+    output reg         HREADY_OUT,   // 1=Ready, 0=Insert wait state
+    output reg  [1:0]  HRESP         // Transfer response
 );
 
     // -------------------------------------------------------------------------
-    // HTRANS encoding (Bảng 3-1, AMBA AHB Spec)
+    // HTRANS / HRESP Constants
     // -------------------------------------------------------------------------
     localparam HTRANS_IDLE   = 2'b00;
     localparam HTRANS_BUSY   = 2'b01;
     localparam HTRANS_NONSEQ = 2'b10;
     localparam HTRANS_SEQ    = 2'b11;
 
-    // -------------------------------------------------------------------------
-    // HRESP encoding (Bảng 3-5, AMBA AHB Spec)
-    // -------------------------------------------------------------------------
     localparam HRESP_OKAY    = 2'b00;
     localparam HRESP_ERROR   = 2'b01;
-    localparam HRESP_RETRY   = 2'b10;
-    localparam HRESP_SPLIT   = 2'b11;
 
     // -------------------------------------------------------------------------
-    // HBURST encoding (Bảng 3-2, AMBA AHB Spec)
+    // Dummy RAM
     // -------------------------------------------------------------------------
-    localparam HBURST_SINGLE = 3'b000;
-    localparam HBURST_INCR   = 3'b001;
+    reg [31:0] mem [0:MEM_DEPTH-1];
 
-    // -------------------------------------------------------------------------
-    // FSM State Encoding
-    // -------------------------------------------------------------------------
-    localparam [2:0]
-        ST_IDLE    = 3'd0,
-        ST_ADDR    = 3'd1,
-        ST_DATA_WR = 3'd2,
-        ST_DATA_RD = 3'd3,
-        ST_WAIT    = 3'd4,
-        ST_ERROR   = 3'd5;
+    integer i;
+    initial begin
+        for (i = 0; i < MEM_DEPTH; i = i + 1)
+            mem[i] = 32'h0000_0000;
+    end
 
     // -------------------------------------------------------------------------
     // Internal Registers
     // -------------------------------------------------------------------------
-    reg [2:0]  state, next_state;
-    reg [31:0] addr_lat;    // Địa chỉ chốt lại khi bắt đầu transfer
-    reg        write_lat;   // Hướng transfer chốt lại
-    reg [31:0] wdata_lat;   // Dữ liệu ghi chốt lại
-    reg [2:0]  size_lat;    // Kích thước chốt lại
-    reg        wait_prev;   // Phân biệt giai đoạn WAIT
+    // AHB là pipelined: address phase T1, data phase T2
+    // Slave phải chốt (latch) địa chỉ và control ở cuối address phase
+    reg [31:0] addr_lat;         // Địa chỉ chốt
+    reg        write_lat;        // Hướng transfer chốt
+    reg [2:0]  size_lat;         // Kích thước chốt
+    reg        sel_lat;          // HSEL chốt
+    reg        trans_valid_lat;  // Transfer có hiệu lực không
+
+    reg [3:0]  wait_cnt;         // Bộ đếm wait state
+    reg        err_phase2;       // Cờ second cycle của ERROR response
 
     // -------------------------------------------------------------------------
-    // Sequential: State Register
+    // Address decode: kiểm tra địa chỉ có hợp lệ không
     // -------------------------------------------------------------------------
-    always @(posedge HCLK or negedge HRESETn) begin
-        if (!HRESETn)
-            state <= ST_IDLE;
-        else
-            state <= next_state;
-    end
+    wire [31:0] addr_offset = addr_lat - BASE_ADDR;
+    wire [7:0]  word_index  = addr_offset[9:2];   // Word index (1KB = 10-bit space)
+    wire        addr_valid  = (addr_lat >= BASE_ADDR) &&
+                              (addr_lat < (BASE_ADDR + MEM_DEPTH * 4));
 
     // -------------------------------------------------------------------------
-    // Sequential: Chốt control inputs khi bắt đầu transfer
+    // Sequential: Chốt address phase
+    // Theo spec: "A slave must only sample the address and control signals
+    // and HSELx when HREADY is HIGH" (Section 3.8)
     // -------------------------------------------------------------------------
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
-            addr_lat  <= 32'h0;
-            write_lat <= 1'b0;
-            wdata_lat <= 32'h0;
-            size_lat  <= 3'b010; // Word
-        end else if (start && state == ST_IDLE) begin
-            addr_lat  <= addr_in;
-            write_lat <= write_in;
-            wdata_lat <= wdata_in;
-            size_lat  <= size_in;
+            addr_lat        <= 32'h0;
+            write_lat       <= 1'b0;
+            size_lat        <= 3'b010;
+            sel_lat         <= 1'b0;
+            trans_valid_lat <= 1'b0;
+        end else if (HREADY_IN) begin
+            // Chỉ sample khi HREADY HIGH (transfer hiện tại đang kết thúc)
+            addr_lat        <= HADDR;
+            write_lat       <= HWRITE;
+            size_lat        <= HSIZE;
+            sel_lat         <= HSEL;
+            // Transfer hợp lệ: HSEL cao VÀ HTRANS là NONSEQ hoặc SEQ
+            trans_valid_lat <= HSEL && (HTRANS == HTRANS_NONSEQ || HTRANS == HTRANS_SEQ);
         end
     end
 
     // -------------------------------------------------------------------------
-    // Combinational: Next-State Logic
-    // -------------------------------------------------------------------------
-    always @(*) begin
-        next_state = state;
-        case (state)
-            ST_IDLE: begin
-                if (start)
-                    next_state = ST_ADDR;
-            end
-
-            ST_ADDR: begin
-                // Phase địa chỉ — luôn tiếp tục sang phase dữ liệu ngay chu kỳ sau
-                // (Theo AHB: address phase 1 cycle, data phase bắt đầu tiếp theo)
-                if (write_lat)
-                    next_state = ST_DATA_WR;
-                else
-                    next_state = ST_DATA_RD;
-            end
-
-            ST_DATA_WR: begin
-                if (!HREADY)
-                    next_state = ST_WAIT;
-                else if (HRESP == HRESP_ERROR)
-                    next_state = ST_ERROR;
-                else if (HRESP == HRESP_OKAY)
-                    next_state = ST_IDLE;
-                else
-                    next_state = ST_ADDR; // RETRY: thực hiện lại
-            end
-
-            ST_DATA_RD: begin
-                if (!HREADY)
-                    next_state = ST_WAIT;
-                else if (HRESP == HRESP_ERROR)
-                    next_state = ST_ERROR;
-                else if (HRESP == HRESP_OKAY)
-                    next_state = ST_IDLE;
-                else
-                    next_state = ST_ADDR; // RETRY
-            end
-
-            ST_WAIT: begin
-                // Chờ HREADY HIGH từ slave
-                if (HREADY) begin
-                    if (HRESP == HRESP_ERROR)
-                        next_state = ST_ERROR;
-                    else if (write_lat)
-                        next_state = ST_DATA_WR;
-                    else
-                        next_state = ST_DATA_RD;
-                end
-            end
-
-            ST_ERROR: begin
-                // Sau 1 cycle báo error, về IDLE
-                next_state = ST_IDLE;
-            end
-
-            default: next_state = ST_IDLE;
-        endcase
-    end
-
-    // -------------------------------------------------------------------------
-    // Sequential: Output Logic (Mealy/Moore combined)
+    // Sequential: Response Logic + RAM Read/Write
     // -------------------------------------------------------------------------
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
-            HADDR     <= 32'h0;
-            HTRANS    <= HTRANS_IDLE;
-            HWRITE    <= 1'b0;
-            HSIZE     <= 3'b010;
-            HBURST    <= HBURST_SINGLE;
-            HPROT     <= 4'b0011;       // Data, privileged
-            HWDATA    <= 32'h0;
-            rdata_out <= 32'h0;
-            done      <= 1'b0;
-            error_out <= 1'b0;
+            HRDATA      <= 32'h0;
+            HREADY_OUT  <= 1'b1;
+            HRESP       <= HRESP_OKAY;
+            wait_cnt    <= 4'h0;
+            err_phase2  <= 1'b0;
         end else begin
-            // Defaults mỗi cycle
-            done      <= 1'b0;
-            error_out <= 1'b0;
 
-            case (next_state)
-                ST_IDLE: begin
-                    HTRANS <= HTRANS_IDLE;
-                    HADDR  <= 32'h0;
-                    HWRITE <= 1'b0;
+            // ------------------------------------------------------------------
+            // Xử lý ERROR response 2-cycle (Section 3.9.3)
+            // Cycle 1: HREADY=0, HRESP=ERROR
+            // Cycle 2: HREADY=1, HRESP=ERROR
+            // ------------------------------------------------------------------
+            if (err_phase2) begin
+                HREADY_OUT <= 1'b1;
+                HRESP      <= HRESP_OKAY; // Trở về OKAY sau khi báo xong
+                err_phase2 <= 1'b0;
+                $display("[AHB_SLAVE] ERROR response cycle-2 @ addr=0x%08h, t=%0t", addr_lat, $time);
+            end
+
+            else if (trans_valid_lat) begin
+                // Địa chỉ ngoài phạm vi → ERROR 2-cycle
+                if (!addr_valid) begin
+                    HREADY_OUT <= 1'b0;     // Cycle 1: extend transfer
+                    HRESP      <= HRESP_ERROR;
+                    err_phase2 <= 1'b1;
+                    $display("[AHB_SLAVE] Invalid addr=0x%08h, issuing ERROR, t=%0t", addr_lat, $time);
                 end
 
-                ST_ADDR: begin
-                    // Broadcast address + control signals (pipelined: address phase)
-                    HADDR  <= addr_lat;
-                    HWRITE <= write_lat;
-                    HSIZE  <= size_lat;
-                    HBURST <= HBURST_SINGLE;
-                    HPROT  <= 4'b0011;
-                    HTRANS <= HTRANS_NONSEQ;
+                // Wait state chưa đủ
+                else if (wait_cnt < WAIT_STATES) begin
+                    HREADY_OUT <= 1'b0;
+                    HRESP      <= HRESP_OKAY;
+                    wait_cnt   <= wait_cnt + 1'b1;
                 end
 
-                ST_DATA_WR: begin
-                    // Data phase cho write: drive HWDATA
-                    HWDATA <= wdata_lat;
-                    HTRANS <= HTRANS_IDLE; // Single transfer — không có beat tiếp theo
-                end
+                // Transfer thực sự xử lý
+                else begin
+                    wait_cnt   <= 4'h0;
+                    HREADY_OUT <= 1'b1;
+                    HRESP      <= HRESP_OKAY;
 
-                ST_DATA_RD: begin
-                    // Data phase cho read: sample HRDATA khi HREADY HIGH
-                    HTRANS <= HTRANS_IDLE;
-                    if (HREADY && HRESP == HRESP_OKAY) begin
-                        rdata_out <= HRDATA;
-                        done      <= 1'b1;
+                    if (write_lat) begin
+                        // ------------------------------------------------
+                        // WRITE: ghi vào RAM theo kích thước (HSIZE)
+                        // ------------------------------------------------
+                        case (size_lat)
+                            3'b000: begin // Byte
+                                case (addr_lat[1:0])
+                                    2'b00: mem[word_index][7:0]   <= HWDATA[7:0];
+                                    2'b01: mem[word_index][15:8]  <= HWDATA[15:8];
+                                    2'b10: mem[word_index][23:16] <= HWDATA[23:16];
+                                    2'b11: mem[word_index][31:24] <= HWDATA[31:24];
+                                endcase
+                                $display("[AHB_SLAVE] WRITE Byte  @ 0x%08h = 0x%02h, t=%0t",
+                                         addr_lat, HWDATA[7:0], $time);
+                            end
+                            3'b001: begin // Halfword
+                                if (!addr_lat[0]) begin // Aligned check
+                                    if (addr_lat[1])
+                                        mem[word_index][31:16] <= HWDATA[31:16];
+                                    else
+                                        mem[word_index][15:0]  <= HWDATA[15:0];
+                                end
+                                $display("[AHB_SLAVE] WRITE HWord @ 0x%08h = 0x%04h, t=%0t",
+                                         addr_lat, HWDATA[15:0], $time);
+                            end
+                            3'b010: begin // Word
+                                mem[word_index] <= HWDATA;
+                                $display("[AHB_SLAVE] WRITE Word  @ 0x%08h = 0x%08h, t=%0t",
+                                         addr_lat, HWDATA, $time);
+                            end
+                            default: mem[word_index] <= HWDATA; // Xử lý rộng hơn nếu cần
+                        endcase
+                        HRDATA <= 32'h0; // Không dùng trong write
+
+                    end else begin
+                        // ------------------------------------------------
+                        // READ: đọc từ RAM theo kích thước
+                        // ------------------------------------------------
+                        case (size_lat)
+                            3'b000: begin // Byte — trả về trên đúng byte lane
+                                case (addr_lat[1:0])
+                                    2'b00: HRDATA <= {24'h0, mem[word_index][7:0]};
+                                    2'b01: HRDATA <= {16'h0, mem[word_index][15:8],  8'h0};
+                                    2'b10: HRDATA <= {8'h0,  mem[word_index][23:16], 16'h0};
+                                    2'b11: HRDATA <= {       mem[word_index][31:24], 24'h0};
+                                endcase
+                                $display("[AHB_SLAVE] READ  Byte  @ 0x%08h = 0x%02h, t=%0t",
+                                         addr_lat, mem[word_index][7:0], $time);
+                            end
+                            3'b001: begin // Halfword
+                                if (addr_lat[1])
+                                    HRDATA <= {mem[word_index][31:16], 16'h0};
+                                else
+                                    HRDATA <= {16'h0, mem[word_index][15:0]};
+                                $display("[AHB_SLAVE] READ  HWord @ 0x%08h = 0x%04h, t=%0t",
+                                         addr_lat, mem[word_index][15:0], $time);
+                            end
+                            3'b010: begin // Word
+                                HRDATA <= mem[word_index];
+                                $display("[AHB_SLAVE] READ  Word  @ 0x%08h = 0x%08h, t=%0t",
+                                         addr_lat, mem[word_index], $time);
+                            end
+                            default: HRDATA <= mem[word_index];
+                        endcase
                     end
                 end
-
-                ST_WAIT: begin
-                    // Giữ nguyên HWDATA trong wait state (AHB: master phải giữ data valid)
-                    // HTRANS giữ nguyên, không thay đổi address/control
-                end
-
-                ST_ERROR: begin
-                    error_out <= 1'b1;
-                    HTRANS    <= HTRANS_IDLE;
-                    $display("[AHB_MASTER] ERROR response from slave @ HADDR=0x%08h, t=%0t", HADDR, $time);
-                end
-            endcase
-
-            // Hoàn thành write
-            if (state == ST_DATA_WR && HREADY && HRESP == HRESP_OKAY)
-                done <= 1'b1;
+            end else begin
+                // Không có transfer hợp lệ (IDLE/BUSY) hoặc không được chọn
+                // → phản hồi ngay OKAY, không cần wait
+                HREADY_OUT <= 1'b1;
+                HRESP      <= HRESP_OKAY;
+                HRDATA     <= 32'h0;
+            end
         end
     end
 
