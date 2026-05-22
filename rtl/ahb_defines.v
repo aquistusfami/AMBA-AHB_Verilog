@@ -1,80 +1,60 @@
-// ahb_defines.v
-// AHB defines for vaaman-ahb-verilog implementation
-// Compatible with AHB3-Lite spec
+// Định nghĩa hằng số AHB.
 
 `ifndef AHB_DEFINES_V
 `define AHB_DEFINES_V
 
-// =============================================
-// HTRANS — Transfer Type
-// =============================================
-`define AHB_HTRANS_IDLE   2'b00  // No transfer
-`define AHB_HTRANS_BUSY   2'b01  // Busy (master not ready)
-`define AHB_HTRANS_NONSEQ 2'b10  // Non-sequential (first or only)
-`define AHB_HTRANS_SEQ    2'b11  // Sequential (burst)
+// Kiểu truyền.
+`define AHB_HTRANS_IDLE   2'b00  // Không truyền
+`define AHB_HTRANS_BUSY   2'b01  // Master bận
+`define AHB_HTRANS_NONSEQ 2'b10  // Truyền đầu
+`define AHB_HTRANS_SEQ    2'b11  // Truyền tiếp theo
 
-// =============================================
-// HBURST — Burst Type
-// =============================================
-`define AHB_HBURST_SINGLE 3'b000  // Single transfer
-`define AHB_HBURST_INCR   3'b001  // Incrementing (undefined length)
-`define AHB_HBURST_WRAP4  3'b010  // 4-beat wrapping (not supported)
-`define AHB_HBURST_INCR4  3'b011  // 4-beat incrementing
-`define AHB_HBURST_WRAP8  3'b100  // 8-beat wrapping (not supported)
-`define AHB_HBURST_INCR8  3'b101  // 8-beat incrementing
-`define AHB_HBURST_WRAP16 3'b110  // 16-beat wrapping (not supported)
-`define AHB_HBURST_INCR16 3'b111  // 16-beat incrementing
+// Kiểu burst.
+`define AHB_HBURST_SINGLE 3'b000  // Một lần truyền
+`define AHB_HBURST_INCR   3'b001  // Tăng địa chỉ
+`define AHB_HBURST_WRAP4  3'b010  // Vòng 4 beat
+`define AHB_HBURST_INCR4  3'b011  // Tăng 4 beat
+`define AHB_HBURST_WRAP8  3'b100  // Vòng 8 beat
+`define AHB_HBURST_INCR8  3'b101  // Tăng 8 beat
+`define AHB_HBURST_WRAP16 3'b110  // Vòng 16 beat
+`define AHB_HBURST_INCR16 3'b111  // Tăng 16 beat
 
-// =============================================
-// HSIZE — Transfer Size
-// =============================================
-`define AHB_HSIZE_BYTE    3'b000  // 8-bit
-`define AHB_HSIZE_HALF    3'b001  // 16-bit
-`define AHB_HSIZE_WORD    3'b010  // 32-bit (max supported)
-`define AHB_HSIZE_DWORD   3'b011  // 64-bit  (not supported)
-`define AHB_HSIZE_128     3'b100  // 128-bit (not supported)
+// Kích thước truyền.
+`define AHB_HSIZE_BYTE    3'b000  // 8 bit
+`define AHB_HSIZE_HALF    3'b001  // 16 bit
+`define AHB_HSIZE_WORD    3'b010  // 32 bit
+`define AHB_HSIZE_DWORD   3'b011  // 64 bit
+`define AHB_HSIZE_128     3'b100  // 128 bit
 
-// =============================================
-// HRESP — Slave Response
-// =============================================
-`define AHB_HRESP_OKAY    1'b0   // Transfer OK (only response used)
-`define AHB_HRESP_ERROR   1'b1   // Transfer Error (not used)
+// Phản hồi slave.
+`define AHB_HRESP_OKAY    1'b0   // Thành công
+`define AHB_HRESP_ERROR   1'b1   // Lỗi
 
-// =============================================
-// HWRITE — Transfer Direction
-// =============================================
-`define AHB_HWRITE_READ   1'b0   // Read transfer
-`define AHB_HWRITE_WRITE  1'b1   // Write transfer
+// Hướng truyền dữ liệu.
+`define AHB_HWRITE_READ   1'b0   // Đọc
+`define AHB_HWRITE_WRITE  1'b1   // Ghi
 
-// =============================================
-// HPROT — Protection Control (optional)
-// =============================================
-`define AHB_HPROT_OPCODE       4'b0000  // Opcode fetch
-`define AHB_HPROT_DATA         4'b0001  // Data access
-`define AHB_HPROT_USER         4'b0000  // User access
-`define AHB_HPROT_PRIVILEGED   4'b0010  // Privileged access
-`define AHB_HPROT_NON_BUFFABLE 4'b0000  // Non-bufferable
-`define AHB_HPROT_BUFFABLE     4'b0100  // Bufferable
-`define AHB_HPROT_NON_CACHABLE 4'b0000  // Non-cacheable
-`define AHB_HPROT_CACHABLE     4'b1000  // Cacheable
+// Thuộc tính bảo vệ.
+`define AHB_HPROT_OPCODE       4'b0000  // Lấy lệnh
+`define AHB_HPROT_DATA         4'b0001  // Truy cập dữ liệu
+`define AHB_HPROT_USER         4'b0000  // Chế độ user
+`define AHB_HPROT_PRIVILEGED   4'b0010  // Chế độ đặc quyền
+`define AHB_HPROT_NON_BUFFABLE 4'b0000  // Không buffer
+`define AHB_HPROT_BUFFABLE     4'b0100  // Có buffer
+`define AHB_HPROT_NON_CACHABLE 4'b0000  // Không cache
+`define AHB_HPROT_CACHABLE     4'b1000  // Có cache
 
-// =============================================
-// Bus Width Parameters
-// =============================================
-`define AHB_DATA_WIDTH    32    // Data bus width (max supported)
-`define AHB_ADDR_WIDTH    32    // Address bus width
-`define AHB_HSIZE_MAX     3'b010 // Max transfer size = 32-bit
+// Độ rộng bus.
+`define AHB_DATA_WIDTH    32    // Bus dữ liệu
+`define AHB_ADDR_WIDTH    32    // Bus địa chỉ
+`define AHB_HSIZE_MAX     3'b010 // Lần truyền lớn nhất
 
-// =============================================
-// HMASTLOCK
-// =============================================
+// Trạng thái khóa bus.
 `define AHB_UNLOCKED  1'b0
 `define AHB_LOCKED    1'b1
 
-// =============================================
-// HREADY
-// =============================================
-`define AHB_HREADY_NOT_READY  1'b0  // Slave extending transfer
-`define AHB_HREADY_READY      1'b1  // Transfer complete
+// Trạng thái sẵn sàng.
+`define AHB_HREADY_NOT_READY  1'b0  // Đang chờ
+`define AHB_HREADY_READY      1'b1  // Hoàn tất
 
-`endif // AHB_DEFINES_V
+`endif // Kết thúc guard

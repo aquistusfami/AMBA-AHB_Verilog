@@ -7,50 +7,50 @@ module ahb_arbiter #(
     input  wire                               HCLK,
     input  wire                               HRESETn,
 
-    // Master request signals
+    // Tín hiệu yêu cầu từ master.
     input  wire [NUM_MASTERS-1:0]             HBUSREQ,
     input  wire [NUM_MASTERS-1:0]             HLOCK,
 
-    // AHB bus monitor signals
-    input  wire [NUM_MASTERS-1:0]             HSPLIT,   // Slave re-enables split masters
+    // Tín hiệu theo dõi bus.
+    input  wire [NUM_MASTERS-1:0]             HSPLIT,   // Slave mở lại master SPLIT
     input  wire [1:0]                         HTRANS,
     input  wire [2:0]                         HBURST,
     input  wire [1:0]                         HRESP,
     input  wire                               HREADY,
 
-    // Arbiter outputs
+    // Tín hiệu cấp bus.
     output reg  [NUM_MASTERS-1:0]             HGRANT,
     output reg  [$clog2(NUM_MASTERS)-1:0]     HMASTER,
     output reg                                HMASTLOCK
 );
 
-// Transfer Types (AMBA 2 AHB Table 3-1)
+// Kiểu truyền.
 
 localparam TR_IDLE   = 2'b00;
 localparam TR_BUSY   = 2'b01;
 localparam TR_NONSEQ = 2'b10;
 localparam TR_SEQ    = 2'b11;
 
-// Response Types (AMBA 2 AHB Table 6-1)
+// Kiểu phản hồi.
 
 localparam RESP_OKAY  = 2'b00;
 localparam RESP_ERROR = 2'b01;
 localparam RESP_RETRY = 2'b10;
 localparam RESP_SPLIT = 2'b11;
 
-// Internal Parameters
+// Tham số nội bộ.
 
 localparam MASTER_W = $clog2(NUM_MASTERS);
 
-// Internal Registers
+// Thanh ghi nội bộ.
 
 reg [MASTER_W-1:0]   current_master;
 reg [MASTER_W-1:0]   next_master;
 reg [MASTER_W-1:0]   last_granted;
 reg [MASTER_W-1:0]   addr_phase_master;
 
-// SPLIT state tracking — one bit per master
-// split_masters[n] = 1 means master n is suspended (waiting for HSPLIT)
+// Theo dõi master đang bị SPLIT.
+// Bit bằng 1 nghĩa là master đang chờ HSPLIT.
 reg [NUM_MASTERS-1:0] split_masters;
 
 reg [4:0] beat_cnt;
@@ -61,7 +61,7 @@ integer i;
 reg [MASTER_W-1:0] temp_idx;
 reg                found;
 
-// Continuous Assignments
+// Tín hiệu tổ hợp.
 
 wire current_lock;
 wire transfer_valid;
@@ -72,14 +72,14 @@ wire retry_response;
 wire split_response;
 wire hold_bus;
 
-// Current master lock status
+// Trạng thái khóa của master hiện tại.
 assign current_lock =
     (HMASTER < NUM_MASTERS) ? HLOCK[HMASTER] : 1'b0;
 
-// A valid transfer is NONSEQ or SEQ (HTRANS[1] = 1)
+// Truyền hợp lệ là NONSEQ hoặc SEQ.
 assign transfer_valid = HTRANS[1];
 
-// Fixed-length burst types
+// Các burst có độ dài cố định.
 assign fixed_burst =
        (HBURST == 3'b010)   // WRAP4
     || (HBURST == 3'b011)   // INCR4
@@ -88,12 +88,12 @@ assign fixed_burst =
     || (HBURST == 3'b110)   // WRAP16
     || (HBURST == 3'b111);  // INCR16
 
-// Response detects — all require HREADY=1 to complete (AMBA 2 spec section 6.2)
+// Phản hồi chỉ hoàn tất khi HREADY cao.
 assign error_response = HREADY && (HRESP == RESP_ERROR);
 assign retry_response = HREADY && (HRESP == RESP_RETRY);
 assign split_response = HREADY && (HRESP == RESP_SPLIT);
 
-// Last beat of a fixed burst
+// Beat cuối của burst cố định.
 assign burst_last = (beat_cnt == 0);
 
 assign hold_bus =
@@ -108,11 +108,10 @@ always @(posedge HCLK or negedge HRESETn) begin
         split_masters <= {NUM_MASTERS{1'b0}};
     end
     else begin
-        // Re-enable masters indicated by slave via HSPLIT
-        // HSPLIT[n]=1 means slave is ready to serve master n again
+        // Mở lại master theo HSPLIT.
         split_masters <= split_masters & ~HSPLIT;
 
-        // Suspend current master on SPLIT response
+        // Treo master khi gặp SPLIT.
         if (split_response && (HMASTER < NUM_MASTERS))
             split_masters[HMASTER] <= 1'b1;
     end
@@ -130,16 +129,14 @@ always @(*) begin
         if (temp_idx >= NUM_MASTERS)
             temp_idx = temp_idx - NUM_MASTERS[MASTER_W-1:0];
 
-        // Grant only if:
-        //   1. Master is requesting
-        //   2. Master is NOT suspended in SPLIT state
+        // Cấp bus cho master đang yêu cầu và không bị SPLIT.
         if (HBUSREQ[temp_idx] && !split_masters[temp_idx] && !found) begin
             next_master = temp_idx;
             found       = 1'b1;
         end
     end
 
-    // Parking: no requests → default master gets the bus
+    // Không có yêu cầu thì park về master mặc định.
     if (!found)
         next_master = DEFAULT_MASTER[MASTER_W-1:0];
 
@@ -152,25 +149,25 @@ always @(posedge HCLK or negedge HRESETn) begin
     end
     else begin
 
-        // Abort burst on error or bus re-arbitration
+        // Hủy burst khi lỗi, retry hoặc split.
         if (error_response || retry_response || split_response) begin
             burst_active <= 1'b0;
             beat_cnt     <= 5'd0;
         end
         else if (HREADY) begin
 
-            // Start of a new fixed-length burst
+            // Bắt đầu burst cố định.
             if ((HTRANS == TR_NONSEQ) && fixed_burst) begin
                 burst_active <= 1'b1;
                 case (HBURST)
-                    3'b010, 3'b011: beat_cnt <= 5'd2;   // WRAP4 / INCR4  (3 beats, 2 remaining after NONSEQ)
-                    3'b100, 3'b101: beat_cnt <= 5'd6;   // WRAP8 / INCR8
-                    3'b110, 3'b111: beat_cnt <= 5'd14;  // WRAP16 / INCR16
+                    3'b010, 3'b011: beat_cnt <= 5'd2;   // Còn 2 beat
+                    3'b100, 3'b101: beat_cnt <= 5'd6;   // Còn 6 beat
+                    3'b110, 3'b111: beat_cnt <= 5'd14;  // Còn 14 beat
                     default:        beat_cnt <= 5'd0;
                 endcase
             end
 
-            // Continue burst — count down remaining SEQ beats
+            // Đếm các beat SEQ còn lại.
             else if (burst_active && (HTRANS == TR_SEQ)) begin
                 if (!burst_last)
                     beat_cnt <= beat_cnt - 1'b1;
