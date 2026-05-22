@@ -253,14 +253,13 @@ assign hready_global =
 
 assign HREADY = hready_global;
 
-// Chọn phản hồi theo slave của pha dữ liệu.
-assign HRESP =
+    // Chọn phản hồi theo slave của pha dữ liệu.
+    assign HRESP =
         (HSEL_S0_data)      ? HRESP_S0 :
         (HSEL_S1_data)      ? HRESP_S1 :
         (HSEL_S2_data)      ? HRESP_S2 :
         (HSEL_S3_data)      ? HRESP_S3 :
         (HSEL_DEFAULT_data) ? HRESP_DEF :
-        (HTRANS_data == TR_NONSEQ || HTRANS_data == TR_SEQ) ? RESP_ERROR : 
                               RESP_OKAY;
 
 // Gộp HSPLIT từ các slave.

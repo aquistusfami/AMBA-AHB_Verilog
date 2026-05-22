@@ -36,6 +36,7 @@ module ahb_slave #(
 
     localparam HRESP_OKAY    = 2'b00;
     localparam HRESP_ERROR   = 2'b01;
+    localparam MEM_INDEX_W   = (MEM_DEPTH <= 1) ? 1 : $clog2(MEM_DEPTH);
 
     // RAM nội bộ.
     reg [31:0] mem [0:MEM_DEPTH-1];
@@ -55,11 +56,14 @@ module ahb_slave #(
 
     reg [3:0]  wait_cnt;         // Đếm chu kỳ chờ
     reg        err_phase2;       // Pha hai của ERROR
-    reg        err_done;         // Giữ ERROR thêm một chu kỳ
+    reg        hready_out_reg;
+    reg [1:0]  hresp_reg;
+    reg [31:0] read_data;
+    reg [31:0] write_data_lane;
 
     // Kiểm tra vùng địa chỉ.
     wire [31:0] addr_offset = addr_lat - BASE_ADDR;
-    wire [7:0]  word_index  = addr_offset[9:2];   // Chỉ số word
+    wire [MEM_INDEX_W-1:0] word_index = addr_offset[MEM_INDEX_W+1:2]; // Chỉ số word
     wire        addr_valid  = (addr_lat >= BASE_ADDR) &&
                               (addr_lat < (BASE_ADDR + MEM_DEPTH * 4));
 
@@ -82,45 +86,93 @@ module ahb_slave #(
         end
     end
 
-    // Xử lý phản hồi và truy cập RAM.
+    always @(*) begin
+        if (trans_valid_lat && addr_valid && !write_lat) begin
+            case (size_lat)
+                3'b000: begin
+                    case (addr_lat[1:0])
+                        2'b00: read_data = {24'h0, mem[word_index][7:0]};
+                        2'b01: read_data = {16'h0, mem[word_index][15:8], 8'h0};
+                        2'b10: read_data = {8'h0, mem[word_index][23:16], 16'h0};
+                        default: read_data = {mem[word_index][31:24], 24'h0};
+                    endcase
+                end
+                3'b001: begin
+                    if (addr_lat[1])
+                        read_data = {mem[word_index][31:16], 16'h0};
+                    else
+                        read_data = {16'h0, mem[word_index][15:0]};
+                end
+                default: read_data = mem[word_index];
+            endcase
+        end else begin
+            read_data = 32'h0;
+        end
+
+        HRDATA = read_data;
+    end
+
+    always @(*) begin
+        case (size_lat)
+            3'b000: begin
+                case (addr_lat[1:0])
+                    2'b00: write_data_lane = {24'h0, HWDATA[7:0]};
+                    2'b01: write_data_lane = {16'h0, HWDATA[15:8], 8'h0};
+                    2'b10: write_data_lane = {8'h0, HWDATA[23:16], 16'h0};
+                    default: write_data_lane = {HWDATA[31:24], 24'h0};
+                endcase
+            end
+            3'b001: begin
+                if (addr_lat[1])
+                    write_data_lane = {HWDATA[31:16], 16'h0};
+                else
+                    write_data_lane = {16'h0, HWDATA[15:0]};
+            end
+            default: write_data_lane = HWDATA;
+        endcase
+    end
+
+    always @(*) begin
+        HREADY_OUT = hready_out_reg;
+        HRESP      = hresp_reg;
+
+        if (!err_phase2 && trans_valid_lat && !addr_valid) begin
+            HREADY_OUT = 1'b0;
+            HRESP      = HRESP_ERROR;
+        end
+    end
+
+    // Xử lý trạng thái phản hồi và ghi RAM.
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
-            HRDATA      <= 32'h0;
-            HREADY_OUT  <= 1'b1;
-            HRESP       <= HRESP_OKAY;
+            hready_out_reg <= 1'b1;
+            hresp_reg      <= HRESP_OKAY;
             wait_cnt    <= 4'h0;
             err_phase2  <= 1'b0;
-            err_done    <= 1'b0;
         end else begin
 
             // ERROR cần hai chu kỳ theo AHB.
             if (err_phase2) begin
-                HREADY_OUT <= 1'b1;
-                HRESP      <= HRESP_ERROR;
+                hready_out_reg <= 1'b1;
+                hresp_reg      <= HRESP_OKAY;
                 err_phase2 <= 1'b0;
-                err_done   <= 1'b1;
                 $display("[AHB_SLAVE] ERROR response cycle-2 @ addr=0x%08h, t=%0t", addr_lat, $time);
-            end
-
-            else if (err_done) begin
-                HREADY_OUT <= 1'b1;
-                HRESP      <= HRESP_ERROR;
-                err_done   <= 1'b0;
             end
 
             else if (trans_valid_lat) begin
                 // Địa chỉ ngoài vùng trả ERROR.
                 if (!addr_valid) begin
-                    HREADY_OUT <= 1'b0;     // Kéo dài lần truyền
-                    HRESP      <= HRESP_ERROR;
+                    hready_out_reg <= 1'b1;
+                    hresp_reg      <= HRESP_ERROR;
+                    wait_cnt       <= 4'h0;
                     err_phase2 <= 1'b1;
                     $display("[AHB_SLAVE] Invalid addr=0x%08h, issuing ERROR, t=%0t", addr_lat, $time);
                 end
 
                 // Chèn chu kỳ chờ.
                 else if (stall_req || (wait_cnt < WAIT_STATES)) begin
-                    HREADY_OUT <= 1'b0;
-                    HRESP      <= HRESP_OKAY;
+                    hready_out_reg <= 1'b0;
+                    hresp_reg      <= HRESP_OKAY;
                     if (!stall_req)
                         wait_cnt <= wait_cnt + 1'b1;
                 end
@@ -128,8 +180,8 @@ module ahb_slave #(
                 // Thực hiện truyền.
                 else begin
                     wait_cnt   <= 4'h0;
-                    HREADY_OUT <= 1'b1;
-                    HRESP      <= HRESP_OKAY;
+                    hready_out_reg <= 1'b1;
+                    hresp_reg      <= HRESP_OKAY;
 
                     if (write_lat) begin
                         // Ghi RAM theo HSIZE.
@@ -142,7 +194,7 @@ module ahb_slave #(
                                     2'b11: mem[word_index][31:24] <= HWDATA[31:24];
                                 endcase
                                 $display("[AHB_SLAVE] WRITE Byte  @ 0x%08h = 0x%02h, t=%0t",
-                                         addr_lat, HWDATA[7:0], $time);
+                                         addr_lat, (write_data_lane >> (addr_lat[1:0] * 8)) & 8'hff, $time);
                             end
                             3'b001: begin // Nửa word
                                 if (!addr_lat[0]) begin // Kiểm tra căn chỉnh
@@ -152,7 +204,7 @@ module ahb_slave #(
                                         mem[word_index][15:0]  <= HWDATA[15:0];
                                 end
                                 $display("[AHB_SLAVE] WRITE HWord @ 0x%08h = 0x%04h, t=%0t",
-                                         addr_lat, HWDATA[15:0], $time);
+                                         addr_lat, addr_lat[1] ? HWDATA[31:16] : HWDATA[15:0], $time);
                             end
                             3'b010: begin // Word
                                 mem[word_index] <= HWDATA;
@@ -161,43 +213,31 @@ module ahb_slave #(
                             end
                             default: mem[word_index] <= HWDATA; // Mặc định ghi word
                         endcase
-                        HRDATA <= 32'h0; // Không dùng khi ghi
-
                     end else begin
                         // Đọc RAM theo HSIZE.
                         case (size_lat)
                             3'b000: begin // Byte
-                                case (addr_lat[1:0])
-                                    2'b00: HRDATA <= {24'h0, mem[word_index][7:0]};
-                                    2'b01: HRDATA <= {16'h0, mem[word_index][15:8],  8'h0};
-                                    2'b10: HRDATA <= {8'h0,  mem[word_index][23:16], 16'h0};
-                                    2'b11: HRDATA <= {       mem[word_index][31:24], 24'h0};
-                                endcase
                                 $display("[AHB_SLAVE] READ  Byte  @ 0x%08h = 0x%02h, t=%0t",
-                                         addr_lat, mem[word_index][7:0], $time);
+                                         addr_lat, (read_data >> (addr_lat[1:0] * 8)) & 8'hff, $time);
                             end
                             3'b001: begin // Nửa word
-                                if (addr_lat[1])
-                                    HRDATA <= {mem[word_index][31:16], 16'h0};
-                                else
-                                    HRDATA <= {16'h0, mem[word_index][15:0]};
                                 $display("[AHB_SLAVE] READ  HWord @ 0x%08h = 0x%04h, t=%0t",
-                                         addr_lat, mem[word_index][15:0], $time);
+                                         addr_lat, addr_lat[1] ? read_data[31:16] : read_data[15:0], $time);
                             end
                             3'b010: begin // Word
-                                HRDATA <= mem[word_index];
                                 $display("[AHB_SLAVE] READ  Word  @ 0x%08h = 0x%08h, t=%0t",
                                          addr_lat, mem[word_index], $time);
                             end
-                            default: HRDATA <= mem[word_index];
+                            default: begin
+                            end
                         endcase
                     end
                 end
             end else begin
                 // Không được chọn thì trả OKAY.
-                HREADY_OUT <= 1'b1;
-                HRESP      <= HRESP_OKAY;
-                HRDATA     <= 32'h0;
+                hready_out_reg <= 1'b1;
+                hresp_reg      <= HRESP_OKAY;
+                wait_cnt       <= 4'h0;
             end
         end
     end
@@ -222,9 +262,20 @@ module ahb_default_slave (
 
     reg trans_valid_lat;
     reg err_phase2;
-    reg err_done;
+    reg hready_out_reg;
+    reg [1:0] hresp_reg;
 
     assign HRDATA = 32'h0;
+
+    always @(*) begin
+        HREADY_OUT = hready_out_reg;
+        HRESP      = hresp_reg;
+
+        if (!err_phase2 && trans_valid_lat) begin
+            HREADY_OUT = 1'b0;
+            HRESP      = HRESP_ERROR;
+        end
+    end
 
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
@@ -236,26 +287,20 @@ module ahb_default_slave (
 
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
-            HREADY_OUT <= 1'b1;
-            HRESP      <= HRESP_OKAY;
+            hready_out_reg <= 1'b1;
+            hresp_reg      <= HRESP_OKAY;
             err_phase2 <= 1'b0;
-            err_done   <= 1'b0;
         end else if (err_phase2) begin
-            HREADY_OUT <= 1'b1;
-            HRESP      <= HRESP_ERROR;
+            hready_out_reg <= 1'b1;
+            hresp_reg      <= HRESP_OKAY;
             err_phase2 <= 1'b0;
-            err_done   <= 1'b1;
-        end else if (err_done) begin
-            HREADY_OUT <= 1'b1;
-            HRESP      <= HRESP_ERROR;
-            err_done   <= 1'b0;
         end else if (trans_valid_lat) begin
-            HREADY_OUT <= 1'b0;
-            HRESP      <= HRESP_ERROR;
+            hready_out_reg <= 1'b1;
+            hresp_reg      <= HRESP_ERROR;
             err_phase2 <= 1'b1;
         end else begin
-            HREADY_OUT <= 1'b1;
-            HRESP      <= HRESP_OKAY;
+            hready_out_reg <= 1'b1;
+            hresp_reg      <= HRESP_OKAY;
         end
     end
 

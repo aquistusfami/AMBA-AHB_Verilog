@@ -24,10 +24,11 @@ module ahb_master (
     input  wire [31:0] cmd_wdata,
     input  wire        cmd_write,
     input  wire        cmd_lock,
+    input  wire [2:0]  cmd_size,
 
-    output reg  [31:0] rdata_out,
-    output reg         done,
-    output reg         error_out
+    output reg  [31:0] rdata_out,  // Dữ liệu đọc
+    output reg         done,       // Giữ 1 sau khi hoàn tất
+    output reg         error_out   // Giữ 1 sau khi lỗi
 );
 
     localparam HTRANS_IDLE   = 2'b00;
@@ -43,15 +44,14 @@ module ahb_master (
         ST_IDLE       = 3'd0,
         ST_REQ        = 3'd1,
         ST_ADDR       = 3'd2,
-        ST_DATA_WAIT  = 3'd3,
-        ST_DATA       = 3'd4,
-        ST_ERROR_DONE = 3'd5;
+        ST_DATA       = 3'd3;
 
     reg [2:0]  state;
     reg [31:0] addr_lat;
     reg [31:0] wdata_lat;
     reg        write_lat;
     reg        lock_lat;
+    reg [2:0]  size_lat;
 
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
@@ -60,6 +60,7 @@ module ahb_master (
             wdata_lat <= 32'h0;
             write_lat <= 1'b0;
             lock_lat  <= 1'b0;
+            size_lat  <= HSIZE_WORD;
             HBUSREQ   <= 1'b0;
             HLOCK     <= 1'b0;
             HADDR     <= 32'h0;
@@ -73,9 +74,6 @@ module ahb_master (
             done      <= 1'b0;
             error_out <= 1'b0;
         end else begin
-            done      <= 1'b0;
-            error_out <= 1'b0;
-
             case (state)
                 ST_IDLE: begin
                     HBUSREQ <= 1'b0;
@@ -88,8 +86,11 @@ module ahb_master (
                         wdata_lat <= cmd_wdata;
                         write_lat <= cmd_write;
                         lock_lat  <= cmd_lock;
+                        size_lat  <= cmd_size;
                         HBUSREQ   <= 1'b1;
                         HLOCK     <= cmd_lock;
+                        done      <= 1'b0;
+                        error_out <= 1'b0;
                         state     <= ST_REQ;
                     end
                 end
@@ -102,27 +103,30 @@ module ahb_master (
                     if (HGRANT && HREADY) begin
                         HADDR  <= addr_lat;
                         HWRITE <= write_lat;
-                        HSIZE  <= HSIZE_WORD;
+                        HSIZE  <= size_lat;
                         HBURST <= HBURST_SINGLE;
                         HPROT  <= 4'b0011;
                         HTRANS <= HTRANS_NONSEQ;
+                        HWDATA <= wdata_lat;
                         state  <= ST_ADDR;
                     end
                 end
 
                 ST_ADDR: begin
-                    HTRANS  <= HTRANS_IDLE;
-                    HWDATA  <= wdata_lat;
-                    HBUSREQ <= 1'b0;
-                    HLOCK   <= lock_lat;
-                    state   <= ST_DATA_WAIT;
-                end
-
-                ST_DATA_WAIT: begin
-                    HTRANS <= HTRANS_IDLE;
+                    HADDR  <= addr_lat;
+                    HWRITE <= write_lat;
+                    HSIZE  <= size_lat;
+                    HBURST <= HBURST_SINGLE;
+                    HPROT  <= 4'b0011;
+                    HTRANS <= HTRANS_NONSEQ;
                     HWDATA <= wdata_lat;
                     HLOCK  <= lock_lat;
-                    state   <= ST_DATA;
+
+                    if (HREADY) begin
+                        HTRANS  <= HTRANS_IDLE;
+                        HBUSREQ <= 1'b0;
+                        state   <= ST_DATA;
+                    end
                 end
 
                 ST_DATA: begin
@@ -133,7 +137,9 @@ module ahb_master (
                     if (HREADY) begin
                         if (HRESP == HRESP_ERROR) begin
                             error_out <= 1'b1;
-                            state     <= ST_ERROR_DONE;
+                            HLOCK     <= 1'b0;
+                            HBUSREQ   <= 1'b0;
+                            state     <= ST_IDLE;
                         end else begin
                             if (!write_lat)
                                 rdata_out <= HRDATA;
@@ -142,14 +148,6 @@ module ahb_master (
                             state <= ST_IDLE;
                         end
                     end
-                end
-
-                ST_ERROR_DONE: begin
-                    error_out <= 1'b1;
-                    HLOCK     <= 1'b0;
-                    HBUSREQ   <= 1'b0;
-                    HTRANS    <= HTRANS_IDLE;
-                    state     <= ST_IDLE;
                 end
 
                 default: state <= ST_IDLE;

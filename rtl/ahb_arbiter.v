@@ -12,7 +12,7 @@ module ahb_arbiter #(
     input  wire [NUM_MASTERS-1:0]             HLOCK,
 
     // Tín hiệu theo dõi bus.
-    input  wire [NUM_MASTERS-1:0]             HSPLIT,   // Slave mở lại master SPLIT
+    input  wire [15:0]                        HSPLIT,   // Slave mở lại master SPLIT
     input  wire [1:0]                         HTRANS,
     input  wire [2:0]                         HBURST,
     input  wire [1:0]                         HRESP,
@@ -47,11 +47,11 @@ localparam MASTER_W = $clog2(NUM_MASTERS);
 reg [MASTER_W-1:0]   current_master;
 reg [MASTER_W-1:0]   next_master;
 reg [MASTER_W-1:0]   last_granted;
-reg [MASTER_W-1:0]   addr_phase_master;
 
 // Theo dõi master đang bị SPLIT.
 // Bit bằng 1 nghĩa là master đang chờ HSPLIT.
 reg [NUM_MASTERS-1:0] split_masters;
+reg [NUM_MASTERS-1:0] split_masters_next;
 
 reg [4:0] beat_cnt;
 reg       burst_active;
@@ -66,11 +66,11 @@ reg                found;
 wire current_lock;
 wire transfer_valid;
 wire fixed_burst;
-wire burst_last;
 wire error_response;
 wire retry_response;
 wire split_response;
 wire hold_bus;
+wire [NUM_MASTERS-1:0] hsplit_mask;
 
 // Trạng thái khóa của master hiện tại.
 assign current_lock =
@@ -78,6 +78,8 @@ assign current_lock =
 
 // Truyền hợp lệ là NONSEQ hoặc SEQ.
 assign transfer_valid = HTRANS[1];
+
+assign hsplit_mask = HSPLIT[NUM_MASTERS-1:0];
 
 // Các burst có độ dài cố định.
 assign fixed_burst =
@@ -93,27 +95,25 @@ assign error_response = HREADY && (HRESP == RESP_ERROR);
 assign retry_response = HREADY && (HRESP == RESP_RETRY);
 assign split_response = HREADY && (HRESP == RESP_SPLIT);
 
-// Beat cuối của burst cố định.
-assign burst_last = (beat_cnt == 0);
-
 assign hold_bus =
-       (current_lock    && !split_response && !retry_response)
-    || (burst_active    && !split_response && !retry_response)
-    || (transfer_valid  && !HREADY
-                        && !split_response
-                        && !retry_response);
+       (!HREADY)
+    || (current_lock    && !split_response && !retry_response)
+    || (burst_active    && !split_response && !retry_response);
+
+always @(*) begin
+    split_masters_next = split_masters & ~hsplit_mask;
+
+    if (split_response && (HMASTER < NUM_MASTERS))
+        split_masters_next[HMASTER] = 1'b1;
+end
 
 always @(posedge HCLK or negedge HRESETn) begin
     if (!HRESETn) begin
         split_masters <= {NUM_MASTERS{1'b0}};
     end
     else begin
-        // Mở lại master theo HSPLIT.
-        split_masters <= split_masters & ~HSPLIT;
-
-        // Treo master khi gặp SPLIT.
-        if (split_response && (HMASTER < NUM_MASTERS))
-            split_masters[HMASTER] <= 1'b1;
+        // Cập nhật trạng thái SPLIT trong một lần gán.
+        split_masters <= split_masters_next;
     end
 end
 
@@ -160,19 +160,21 @@ always @(posedge HCLK or negedge HRESETn) begin
             if ((HTRANS == TR_NONSEQ) && fixed_burst) begin
                 burst_active <= 1'b1;
                 case (HBURST)
-                    3'b010, 3'b011: beat_cnt <= 5'd2;   // Còn 2 beat
-                    3'b100, 3'b101: beat_cnt <= 5'd6;   // Còn 6 beat
-                    3'b110, 3'b111: beat_cnt <= 5'd14;  // Còn 14 beat
+                    3'b010, 3'b011: beat_cnt <= 5'd3;   // Còn 3 beat
+                    3'b100, 3'b101: beat_cnt <= 5'd7;   // Còn 7 beat
+                    3'b110, 3'b111: beat_cnt <= 5'd15;  // Còn 15 beat
                     default:        beat_cnt <= 5'd0;
                 endcase
             end
 
             // Đếm các beat SEQ còn lại.
             else if (burst_active && (HTRANS == TR_SEQ)) begin
-                if (!burst_last)
+                if (beat_cnt > 5'd1) begin
                     beat_cnt <= beat_cnt - 1'b1;
-                else
+                end else begin
+                    beat_cnt     <= 5'd0;
                     burst_active <= 1'b0;
+                end
             end
 
         end
@@ -181,15 +183,13 @@ end
 
 always @(posedge HCLK or negedge HRESETn) begin
     if (!HRESETn) begin
-        current_master    <= DEFAULT_MASTER[MASTER_W-1:0];
-        addr_phase_master <= DEFAULT_MASTER[MASTER_W-1:0];
-        last_granted      <= DEFAULT_MASTER[MASTER_W-1:0];
+        current_master <= DEFAULT_MASTER[MASTER_W-1:0];
+        last_granted   <= DEFAULT_MASTER[MASTER_W-1:0];
     end
     else begin
         if (!hold_bus) begin
-            current_master    <= next_master;
-            addr_phase_master <= next_master;
-            last_granted      <= next_master;
+            current_master <= next_master;
+            last_granted   <= next_master;
         end
     end
 end
@@ -211,9 +211,9 @@ always @(posedge HCLK or negedge HRESETn) begin
     end
     else begin
         if (HREADY) begin
-            HMASTER <= addr_phase_master;
-            HMASTLOCK <= (addr_phase_master < NUM_MASTERS) ?
-                          HLOCK[addr_phase_master] : 1'b0;
+            HMASTER <= current_master;
+            HMASTLOCK <= (current_master < NUM_MASTERS) ?
+                          HLOCK[current_master] : 1'b0;
         end
     end
 end

@@ -7,6 +7,7 @@ module ahb_top (
     input  wire        cmd_start_m1,
     input  wire        cmd_write_m1,
     input  wire        cmd_lock_m1,
+    input  wire [2:0]  cmd_size_m1,
     input  wire [31:0] cmd_addr_m1,
     input  wire [31:0] cmd_wdata_m1,
     output wire [31:0] rdata_m1,
@@ -16,6 +17,7 @@ module ahb_top (
     input  wire        cmd_start_m2,
     input  wire        cmd_write_m2,
     input  wire        cmd_lock_m2,
+    input  wire [2:0]  cmd_size_m2,
     input  wire [31:0] cmd_addr_m2,
     input  wire [31:0] cmd_wdata_m2,
     output wire [31:0] rdata_m2,
@@ -25,6 +27,7 @@ module ahb_top (
     input  wire        cmd_start_m3,
     input  wire        cmd_write_m3,
     input  wire        cmd_lock_m3,
+    input  wire [2:0]  cmd_size_m3,
     input  wire [31:0] cmd_addr_m3,
     input  wire [31:0] cmd_wdata_m3,
     output wire [31:0] rdata_m3,
@@ -86,7 +89,7 @@ module ahb_top (
         .HADDR(haddr_m1), .HTRANS(htrans_m1), .HWRITE(hwrite_m1), .HSIZE(hsize_m1),
         .HBURST(hburst_m1), .HPROT(hprot_m1), .HWDATA(hwdata_m1),
         .cmd_start(cmd_start_m1), .cmd_addr(cmd_addr_m1), .cmd_wdata(cmd_wdata_m1),
-        .cmd_write(cmd_write_m1), .cmd_lock(cmd_lock_m1),
+        .cmd_write(cmd_write_m1), .cmd_lock(cmd_lock_m1), .cmd_size(cmd_size_m1),
         .rdata_out(rdata_m1), .done(done_m1), .error_out(error_m1)
     );
 
@@ -96,7 +99,7 @@ module ahb_top (
         .HADDR(haddr_m2), .HTRANS(htrans_m2), .HWRITE(hwrite_m2), .HSIZE(hsize_m2),
         .HBURST(hburst_m2), .HPROT(hprot_m2), .HWDATA(hwdata_m2),
         .cmd_start(cmd_start_m2), .cmd_addr(cmd_addr_m2), .cmd_wdata(cmd_wdata_m2),
-        .cmd_write(cmd_write_m2), .cmd_lock(cmd_lock_m2),
+        .cmd_write(cmd_write_m2), .cmd_lock(cmd_lock_m2), .cmd_size(cmd_size_m2),
         .rdata_out(rdata_m2), .done(done_m2), .error_out(error_m2)
     );
 
@@ -106,13 +109,13 @@ module ahb_top (
         .HADDR(haddr_m3), .HTRANS(htrans_m3), .HWRITE(hwrite_m3), .HSIZE(hsize_m3),
         .HBURST(hburst_m3), .HPROT(hprot_m3), .HWDATA(hwdata_m3),
         .cmd_start(cmd_start_m3), .cmd_addr(cmd_addr_m3), .cmd_wdata(cmd_wdata_m3),
-        .cmd_write(cmd_write_m3), .cmd_lock(cmd_lock_m3),
+        .cmd_write(cmd_write_m3), .cmd_lock(cmd_lock_m3), .cmd_size(cmd_size_m3),
         .rdata_out(rdata_m3), .done(done_m3), .error_out(error_m3)
     );
 
     ahb_arbiter u_arbiter (
         .HCLK(HCLK), .HRESETn(HRESETn), .HBUSREQ(HBUSREQ), .HLOCK(HLOCK),
-        .HSPLIT(HSPLIT[3:0]), .HTRANS(HTRANS), .HBURST(HBURST), .HRESP(HRESP),
+        .HSPLIT(HSPLIT), .HTRANS(HTRANS), .HBURST(HBURST), .HRESP(HRESP),
         .HREADY(HREADY), .HGRANT(HGRANT), .HMASTER(HMASTER), .HMASTLOCK(HMASTLOCK)
     );
 
@@ -164,6 +167,7 @@ module ahb_top (
         .HRDATA(hrdata_s2), .HREADY_OUT(hreadyout_s2), .HRESP(hresp_s2)
     );
 
+    // DDR mô phỏng 1KB tại đầu vùng S3.
     ahb_slave #(.BASE_ADDR(32'h6000_0000), .MEM_DEPTH(256)) u_slave3 (
         .HCLK(HCLK), .HRESETn(HRESETn), .HSEL(hsel_s3), .HADDR(HADDR),
         .HWRITE(HWRITE), .HSIZE(HSIZE), .HBURST(HBURST), .HTRANS(HTRANS),
