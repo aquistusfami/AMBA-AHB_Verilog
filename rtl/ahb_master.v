@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "ahb_defines.v"
 
 module ahb_master (
     input  wire        HCLK,
@@ -31,15 +32,6 @@ module ahb_master (
     output reg         error_out   // Giữ 1 sau khi lỗi
 );
 
-    localparam HTRANS_IDLE   = 2'b00;
-    localparam HTRANS_NONSEQ = 2'b10;
-
-    localparam HRESP_OKAY  = 2'b00;
-    localparam HRESP_ERROR = 2'b01;
-
-    localparam HBURST_SINGLE = 3'b000;
-    localparam HSIZE_WORD    = 3'b010;
-
     localparam [2:0]
         ST_IDLE       = 3'd0,
         ST_REQ        = 3'd1,
@@ -60,14 +52,14 @@ module ahb_master (
             wdata_lat <= 32'h0;
             write_lat <= 1'b0;
             lock_lat  <= 1'b0;
-            size_lat  <= HSIZE_WORD;
+            size_lat  <= `AHB_HSIZE_WORD;
             HBUSREQ   <= 1'b0;
             HLOCK     <= 1'b0;
             HADDR     <= 32'h0;
-            HTRANS    <= HTRANS_IDLE;
+            HTRANS    <= `AHB_HTRANS_IDLE;
             HWRITE    <= 1'b0;
-            HSIZE     <= HSIZE_WORD;
-            HBURST    <= HBURST_SINGLE;
+            HSIZE     <= `AHB_HSIZE_WORD;
+            HBURST    <= `AHB_HBURST_SINGLE;
             HPROT     <= 4'b0011;
             HWDATA    <= 32'h0;
             rdata_out <= 32'h0;
@@ -78,7 +70,7 @@ module ahb_master (
                 ST_IDLE: begin
                     HBUSREQ <= 1'b0;
                     HLOCK   <= 1'b0;
-                    HTRANS  <= HTRANS_IDLE;
+                    HTRANS  <= `AHB_HTRANS_IDLE;
                     HWRITE  <= 1'b0;
 
                     if (cmd_start) begin
@@ -98,15 +90,15 @@ module ahb_master (
                 ST_REQ: begin
                     HBUSREQ <= 1'b1;
                     HLOCK   <= lock_lat;
-                    HTRANS  <= HTRANS_IDLE;
+                    HTRANS  <= `AHB_HTRANS_IDLE;
 
                     if (HGRANT && HREADY) begin
                         HADDR  <= addr_lat;
                         HWRITE <= write_lat;
                         HSIZE  <= size_lat;
-                        HBURST <= HBURST_SINGLE;
+                        HBURST <= `AHB_HBURST_SINGLE;
                         HPROT  <= 4'b0011;
-                        HTRANS <= HTRANS_NONSEQ;
+                        HTRANS <= `AHB_HTRANS_NONSEQ;
                         HWDATA <= wdata_lat;
                         state  <= ST_ADDR;
                     end
@@ -116,26 +108,26 @@ module ahb_master (
                     HADDR  <= addr_lat;
                     HWRITE <= write_lat;
                     HSIZE  <= size_lat;
-                    HBURST <= HBURST_SINGLE;
+                    HBURST <= `AHB_HBURST_SINGLE;
                     HPROT  <= 4'b0011;
-                    HTRANS <= HTRANS_NONSEQ;
+                    HTRANS <= `AHB_HTRANS_NONSEQ;
                     HWDATA <= wdata_lat;
                     HLOCK  <= lock_lat;
 
                     if (HREADY) begin
-                        HTRANS  <= HTRANS_IDLE;
+                        HTRANS  <= `AHB_HTRANS_IDLE;
                         HBUSREQ <= 1'b0;
                         state   <= ST_DATA;
                     end
                 end
 
                 ST_DATA: begin
-                    HTRANS <= HTRANS_IDLE;
+                    HTRANS <= `AHB_HTRANS_IDLE;
                     HWDATA <= wdata_lat;
                     HLOCK  <= lock_lat;
 
                     if (HREADY) begin
-                        if (HRESP == HRESP_ERROR) begin
+                        if (HRESP == `AHB_HRESP_ERROR) begin
                             error_out <= 1'b1;
                             HLOCK     <= 1'b0;
                             HBUSREQ   <= 1'b0;

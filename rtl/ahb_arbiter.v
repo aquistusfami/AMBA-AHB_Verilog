@@ -1,5 +1,4 @@
 `timescale 1ns/1ps
-
 module ahb_arbiter #(
     parameter NUM_MASTERS    = 4,
     parameter DEFAULT_MASTER = 0
@@ -7,15 +6,11 @@ module ahb_arbiter #(
     input  wire                               HCLK,
     input  wire                               HRESETn,
 
-    // Tín hiệu yêu cầu từ master.
+    // Tín hiệu yêu cầu từ bộ chủ.
     input  wire [NUM_MASTERS-1:0]             HBUSREQ,
     input  wire [NUM_MASTERS-1:0]             HLOCK,
 
-    // Tín hiệu theo dõi bus.
-    input  wire [15:0]                        HSPLIT,   // Slave mở lại master SPLIT
-    input  wire [1:0]                         HTRANS,
-    input  wire [2:0]                         HBURST,
-    input  wire [1:0]                         HRESP,
+    // Tín hiệu hoàn tất giao dịch hiện tại.
     input  wire                               HREADY,
 
     // Tín hiệu cấp bus.
@@ -23,20 +18,6 @@ module ahb_arbiter #(
     output reg  [$clog2(NUM_MASTERS)-1:0]     HMASTER,
     output reg                                HMASTLOCK
 );
-
-// Kiểu truyền.
-
-localparam TR_IDLE   = 2'b00;
-localparam TR_BUSY   = 2'b01;
-localparam TR_NONSEQ = 2'b10;
-localparam TR_SEQ    = 2'b11;
-
-// Kiểu phản hồi.
-
-localparam RESP_OKAY  = 2'b00;
-localparam RESP_ERROR = 2'b01;
-localparam RESP_RETRY = 2'b10;
-localparam RESP_SPLIT = 2'b11;
 
 // Tham số nội bộ.
 
@@ -48,14 +29,6 @@ reg [MASTER_W-1:0]   current_master;
 reg [MASTER_W-1:0]   next_master;
 reg [MASTER_W-1:0]   last_granted;
 
-// Theo dõi master đang bị SPLIT.
-// Bit bằng 1 nghĩa là master đang chờ HSPLIT.
-reg [NUM_MASTERS-1:0] split_masters;
-reg [NUM_MASTERS-1:0] split_masters_next;
-
-reg [4:0] beat_cnt;
-reg       burst_active;
-
 integer i;
 
 reg [MASTER_W-1:0] temp_idx;
@@ -64,58 +37,14 @@ reg                found;
 // Tín hiệu tổ hợp.
 
 wire current_lock;
-wire transfer_valid;
-wire fixed_burst;
-wire error_response;
-wire retry_response;
-wire split_response;
 wire hold_bus;
-wire [NUM_MASTERS-1:0] hsplit_mask;
 
-// Trạng thái khóa của master hiện tại.
+// Trạng thái khóa của bộ chủ hiện tại.
 assign current_lock =
     (HMASTER < NUM_MASTERS) ? HLOCK[HMASTER] : 1'b0;
 
-// Truyền hợp lệ là NONSEQ hoặc SEQ.
-assign transfer_valid = HTRANS[1];
-
-assign hsplit_mask = HSPLIT[NUM_MASTERS-1:0];
-
-// Các burst có độ dài cố định.
-assign fixed_burst =
-       (HBURST == 3'b010)   // WRAP4
-    || (HBURST == 3'b011)   // INCR4
-    || (HBURST == 3'b100)   // WRAP8
-    || (HBURST == 3'b101)   // INCR8
-    || (HBURST == 3'b110)   // WRAP16
-    || (HBURST == 3'b111);  // INCR16
-
-// Phản hồi chỉ hoàn tất khi HREADY cao.
-assign error_response = HREADY && (HRESP == RESP_ERROR);
-assign retry_response = HREADY && (HRESP == RESP_RETRY);
-assign split_response = HREADY && (HRESP == RESP_SPLIT);
-
-assign hold_bus =
-       (!HREADY)
-    || (current_lock    && !split_response && !retry_response)
-    || (burst_active    && !split_response && !retry_response);
-
-always @(*) begin
-    split_masters_next = split_masters & ~hsplit_mask;
-
-    if (split_response && (HMASTER < NUM_MASTERS))
-        split_masters_next[HMASTER] = 1'b1;
-end
-
-always @(posedge HCLK or negedge HRESETn) begin
-    if (!HRESETn) begin
-        split_masters <= {NUM_MASTERS{1'b0}};
-    end
-    else begin
-        // Cập nhật trạng thái SPLIT trong một lần gán.
-        split_masters <= split_masters_next;
-    end
-end
+// Giữ quyền sở hữu bus khi giao dịch đang chờ hoặc bộ chủ đang khóa bus.
+assign hold_bus = !HREADY || current_lock;
 
 always @(*) begin
 
@@ -129,56 +58,17 @@ always @(*) begin
         if (temp_idx >= NUM_MASTERS)
             temp_idx = temp_idx - NUM_MASTERS[MASTER_W-1:0];
 
-        // Cấp bus cho master đang yêu cầu và không bị SPLIT.
-        if (HBUSREQ[temp_idx] && !split_masters[temp_idx] && !found) begin
+        // Cấp bus cho bộ chủ đang yêu cầu theo thứ tự vòng tròn.
+        if (HBUSREQ[temp_idx] && !found) begin
             next_master = temp_idx;
             found       = 1'b1;
         end
     end
 
-    // Không có yêu cầu thì park về master mặc định.
+    // Không có yêu cầu thì chuyển bus về bộ chủ mặc định.
     if (!found)
         next_master = DEFAULT_MASTER[MASTER_W-1:0];
 
-end
-
-always @(posedge HCLK or negedge HRESETn) begin
-    if (!HRESETn) begin
-        burst_active <= 1'b0;
-        beat_cnt     <= 5'd0;
-    end
-    else begin
-
-        // Hủy burst khi lỗi, retry hoặc split.
-        if (error_response || retry_response || split_response) begin
-            burst_active <= 1'b0;
-            beat_cnt     <= 5'd0;
-        end
-        else if (HREADY) begin
-
-            // Bắt đầu burst cố định.
-            if ((HTRANS == TR_NONSEQ) && fixed_burst) begin
-                burst_active <= 1'b1;
-                case (HBURST)
-                    3'b010, 3'b011: beat_cnt <= 5'd3;   // Còn 3 beat
-                    3'b100, 3'b101: beat_cnt <= 5'd7;   // Còn 7 beat
-                    3'b110, 3'b111: beat_cnt <= 5'd15;  // Còn 15 beat
-                    default:        beat_cnt <= 5'd0;
-                endcase
-            end
-
-            // Đếm các beat SEQ còn lại.
-            else if (burst_active && (HTRANS == TR_SEQ)) begin
-                if (beat_cnt > 5'd1) begin
-                    beat_cnt <= beat_cnt - 1'b1;
-                end else begin
-                    beat_cnt     <= 5'd0;
-                    burst_active <= 1'b0;
-                end
-            end
-
-        end
-    end
 end
 
 always @(posedge HCLK or negedge HRESETn) begin

@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "ahb_defines.v"
 
 module ahb_top (
     input  wire        HCLK,
@@ -51,8 +52,6 @@ module ahb_top (
     wire        HWRITE, HREADY;
     wire [2:0]  HSIZE, HBURST;
     wire [3:0]  HPROT;
-    wire [15:0] HSPLIT;
-
     wire [3:0]  HBUSREQ;
     wire [3:0]  HLOCK;
     wire [3:0]  HGRANT;
@@ -77,10 +76,10 @@ module ahb_top (
     assign HLOCK[0]   = 1'b0;
     assign haddr_m0   = 32'h0;
     assign hwdata_m0  = 32'h0;
-    assign htrans_m0  = 2'b00;
+    assign htrans_m0  = `AHB_HTRANS_IDLE;
     assign hwrite_m0  = 1'b0;
-    assign hsize_m0   = 3'b010;
-    assign hburst_m0  = 3'b000;
+    assign hsize_m0   = `AHB_HSIZE_WORD;
+    assign hburst_m0  = `AHB_HBURST_SINGLE;
     assign hprot_m0   = 4'b0011;
 
     ahb_master u_master1 (
@@ -115,7 +114,6 @@ module ahb_top (
 
     ahb_arbiter u_arbiter (
         .HCLK(HCLK), .HRESETn(HRESETn), .HBUSREQ(HBUSREQ), .HLOCK(HLOCK),
-        .HSPLIT(HSPLIT), .HTRANS(HTRANS), .HBURST(HBURST), .HRESP(HRESP),
         .HREADY(HREADY), .HGRANT(HGRANT), .HMASTER(HMASTER), .HMASTLOCK(HMASTLOCK)
     );
 
@@ -125,7 +123,7 @@ module ahb_top (
     );
 
     ahb_mux u_mux (
-        .HCLK(HCLK), .HRESETn(HRESETn), .HMASTER(HMASTER), .HMASTLOCK(HMASTLOCK),
+        .HCLK(HCLK), .HRESETn(HRESETn), .HMASTER(HMASTER),
         .HSEL_S0(hsel_s0), .HSEL_S1(hsel_s1), .HSEL_S2(hsel_s2),
         .HSEL_S3(hsel_s3), .HSEL_DEFAULT(hsel_def),
         .HADDR_M0(haddr_m0), .HWDATA_M0(hwdata_m0), .HTRANS_M0(htrans_m0),
@@ -136,14 +134,14 @@ module ahb_top (
         .HWRITE_M2(hwrite_m2), .HSIZE_M2(hsize_m2), .HBURST_M2(hburst_m2), .HPROT_M2(hprot_m2),
         .HADDR_M3(haddr_m3), .HWDATA_M3(hwdata_m3), .HTRANS_M3(htrans_m3),
         .HWRITE_M3(hwrite_m3), .HSIZE_M3(hsize_m3), .HBURST_M3(hburst_m3), .HPROT_M3(hprot_m3),
-        .HRDATA_S0(hrdata_s0), .HREADYOUT_S0(hreadyout_s0), .HRESP_S0(hresp_s0), .HSPLIT_S0(16'h0),
-        .HRDATA_S1(hrdata_s1), .HREADYOUT_S1(hreadyout_s1), .HRESP_S1(hresp_s1), .HSPLIT_S1(16'h0),
-        .HRDATA_S2(hrdata_s2), .HREADYOUT_S2(hreadyout_s2), .HRESP_S2(hresp_s2), .HSPLIT_S2(16'h0),
-        .HRDATA_S3(hrdata_s3), .HREADYOUT_S3(hreadyout_s3), .HRESP_S3(hresp_s3), .HSPLIT_S3(16'h0),
-        .HRDATA_DEF(hrdata_def), .HREADYOUT_DEF(hreadyout_def), .HRESP_DEF(hresp_def), .HSPLIT_DEF(16'h0),
-        .HMASTER_OUT(), .HMASTLOCK_OUT(), .HADDR(HADDR), .HWDATA(HWDATA),
+        .HRDATA_S0(hrdata_s0), .HREADYOUT_S0(hreadyout_s0), .HRESP_S0(hresp_s0),
+        .HRDATA_S1(hrdata_s1), .HREADYOUT_S1(hreadyout_s1), .HRESP_S1(hresp_s1),
+        .HRDATA_S2(hrdata_s2), .HREADYOUT_S2(hreadyout_s2), .HRESP_S2(hresp_s2),
+        .HRDATA_S3(hrdata_s3), .HREADYOUT_S3(hreadyout_s3), .HRESP_S3(hresp_s3),
+        .HRDATA_DEF(hrdata_def), .HREADYOUT_DEF(hreadyout_def), .HRESP_DEF(hresp_def),
+        .HADDR(HADDR), .HWDATA(HWDATA),
         .HTRANS(HTRANS), .HWRITE(HWRITE), .HSIZE(HSIZE), .HBURST(HBURST), .HPROT(HPROT),
-        .HRDATA(HRDATA), .HREADY(HREADY), .HRESP(HRESP), .HSPLIT(HSPLIT)
+        .HRDATA(HRDATA), .HREADY(HREADY), .HRESP(HRESP)
     );
 
     ahb_slave #(.BASE_ADDR(32'h0000_0000)) u_slave0 (

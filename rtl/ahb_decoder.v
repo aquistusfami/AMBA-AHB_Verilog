@@ -11,7 +11,7 @@ module ahb_decoder (
 );
 
 // Giải mã địa chỉ theo nibble cao.
-// Vùng chưa map đi tới slave mặc định.
+// Vùng chưa ánh xạ được chuyển tới bộ tớ mặc định.
 
 // ROM: 0x0000_0000 - 0x0FFF_FFFF.
 assign HSEL_S0 = (HADDR[31:28] == 4'h0);
@@ -30,7 +30,7 @@ assign HSEL_S3 = (
     (HADDR[31:28] == 4'h9)
 );
 
-// Slave mặc định cho vùng chưa map.
+// Bộ tớ mặc định cho vùng chưa ánh xạ.
 assign HSEL_DEFAULT = !(HSEL_S0 || HSEL_S1 || HSEL_S2 || HSEL_S3);
 
 endmodule
