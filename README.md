@@ -1,8 +1,8 @@
-# Mô phỏng tập con AMBA 2 AHB bằng Verilog
+# Thiết kế và mô phỏng AHB theo chuẩn AMBA 2.0
 
-Dự án xây dựng và kiểm thử một hệ thống bus nhiều bộ chủ dựa trên tập con của
-chuẩn **AMBA 2 AHB**. Mục tiêu là minh họa rõ các cơ chế quan trọng của AHB mà
-không triển khai toàn bộ các tính năng nâng cao của chuẩn.
+Dự án thiết kế và kiểm thử một hệ thống bus AHB nhiều bộ chủ bằng Verilog, dựa
+trên chuẩn **AMBA 2.0**. Mục tiêu là mô phỏng các cơ chế chính của AHB trong
+phạm vi phù hợp với bài tập lớn.
 
 Tài liệu tham chiếu: `IHI0011a.pdf` - *AMBA Specification Rev 2.0*.
 
@@ -33,7 +33,7 @@ Hệ thống hiện hỗ trợ:
 - Testbench tự kiểm tra và xuất dạng sóng VCD.
 
 Các tính năng không triển khai gồm `BUSY`, `SEQ`, chuỗi truyền tăng/vòng,
-`RETRY`, `SPLIT` và `HSPLIT`. Đây là lựa chọn phạm vi của đồ án, không phải một
+`RETRY`, `SPLIT` và `HSPLIT`. Đây là lựa chọn phạm vi của bài tập lớn, không phải một
 hiện thực đầy đủ của AMBA 2 AHB.
 
 ## Kiến trúc
@@ -75,7 +75,7 @@ flowchart LR
 ```text
 AMBA-AHB_Verilog/
 ├── rtl/
-│   ├── ahb_defines.v       # Hằng số của tập con AHB
+│   ├── ahb_defines.v       # Hằng số AHB được sử dụng
 │   ├── ahb_master.v        # Máy trạng thái của bộ chủ
 │   ├── ahb_arbiter.v       # Phân xử round-robin và khóa bus
 │   ├── ahb_mux.v           # Ghép kênh địa chỉ, dữ liệu và phản hồi
