@@ -1,3 +1,4 @@
+// Kiểm tra chu kỳ chờ bình thường và lỗi khi chờ quá giới hạn.
 task test_wait_states;
     begin
         $display("[KIỂM THỬ] Chu kỳ chờ và giới hạn thời gian chờ");
@@ -18,6 +19,7 @@ task test_wait_states;
     end
 endtask
 
+// Kiểm tra ERROR từ RAM ngoài phạm vi và bộ tớ mặc định.
 task test_address_errors;
     begin
         $display("[KIỂM THỬ] Lỗi địa chỉ của bộ tớ và bộ tớ mặc định");

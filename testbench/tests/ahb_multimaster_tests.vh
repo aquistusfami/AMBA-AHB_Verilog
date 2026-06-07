@@ -1,3 +1,4 @@
+// Kiểm tra phân xử khi ba bộ chủ yêu cầu bus đồng thời.
 task test_arbitration;
     begin
         $display("[KIỂM THỬ] Phân xử nhiều bộ chủ");
@@ -22,6 +23,7 @@ task test_arbitration;
     end
 endtask
 
+// Kiểm tra quyền sở hữu bus trong giao dịch có khóa.
 task test_locked_transfer;
     begin
         $display("[KIỂM THỬ] Giao dịch khóa");

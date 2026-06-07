@@ -1,10 +1,13 @@
 `timescale 1ns / 1ps
 `include "ahb_defines.v"
 
+// Khối tích hợp bus AHB gồm bốn bộ chủ, bộ phân xử, bộ giải mã và bốn bộ tớ RAM.
 module ahb_top (
+    // Xung nhịp và tín hiệu đặt lại.
     input  wire        HCLK,
     input  wire        HRESETn,
 
+    // Giao diện lệnh của bộ chủ M1.
     input  wire        cmd_start_m1,
     input  wire        cmd_write_m1,
     input  wire        cmd_lock_m1,
@@ -15,6 +18,7 @@ module ahb_top (
     output wire        done_m1,
     output wire        error_m1,
 
+    // Giao diện lệnh của bộ chủ M2.
     input  wire        cmd_start_m2,
     input  wire        cmd_write_m2,
     input  wire        cmd_lock_m2,
@@ -25,6 +29,7 @@ module ahb_top (
     output wire        done_m2,
     output wire        error_m2,
 
+    // Giao diện lệnh của bộ chủ M3.
     input  wire        cmd_start_m3,
     input  wire        cmd_write_m3,
     input  wire        cmd_lock_m3,
@@ -35,9 +40,11 @@ module ahb_top (
     output wire        done_m3,
     output wire        error_m3,
 
+    // Tín hiệu buộc bộ tớ chèn chu kỳ chờ.
     input  wire        stall_req_s1,
     input  wire        stall_req_s2,
 
+    // Tín hiệu quan sát dùng trong mô phỏng.
     output wire [1:0]  dbg_hmaster,
     output wire [3:0]  dbg_hgrant,
     output wire        dbg_hready,
@@ -47,6 +54,7 @@ module ahb_top (
     output wire        dbg_hmastlock
 );
 
+    // Các tín hiệu bus AHB dùng chung.
     wire [31:0] HADDR, HWDATA, HRDATA;
     wire [1:0]  HTRANS, HRESP;
     wire        HWRITE, HREADY;
@@ -58,8 +66,10 @@ module ahb_top (
     wire [1:0]  HMASTER;
     wire        HMASTLOCK;
 
+    // Tín hiệu chọn bộ tớ từ bộ giải mã.
     wire hsel_s0, hsel_s1, hsel_s2, hsel_s3, hsel_def;
 
+    // Tín hiệu riêng của từng bộ chủ.
     wire [31:0] haddr_m0, haddr_m1, haddr_m2, haddr_m3;
     wire [31:0] hwdata_m0, hwdata_m1, hwdata_m2, hwdata_m3;
     wire [1:0]  htrans_m0, htrans_m1, htrans_m2, htrans_m3;
@@ -68,10 +78,12 @@ module ahb_top (
     wire [2:0]  hburst_m0, hburst_m1, hburst_m2, hburst_m3;
     wire [3:0]  hprot_m0, hprot_m1, hprot_m2, hprot_m3;
 
+    // Tín hiệu phản hồi riêng của từng bộ tớ.
     wire [31:0] hrdata_s0, hrdata_s1, hrdata_s2, hrdata_s3, hrdata_def;
     wire        hreadyout_s0, hreadyout_s1, hreadyout_s2, hreadyout_s3, hreadyout_def;
     wire [1:0]  hresp_s0, hresp_s1, hresp_s2, hresp_s3, hresp_def;
 
+    // Bộ chủ M0 mặc định không phát giao dịch.
     assign HBUSREQ[0] = 1'b0;
     assign HLOCK[0]   = 1'b0;
     assign haddr_m0   = 32'h0;
@@ -82,6 +94,7 @@ module ahb_top (
     assign hburst_m0  = `AHB_HBURST_SINGLE;
     assign hprot_m0   = 4'b0011;
 
+    // Ba bộ chủ chủ động nhận lệnh từ testbench.
     ahb_master u_master1 (
         .HCLK(HCLK), .HRESETn(HRESETn), .HGRANT(HGRANT[1]), .HREADY(HREADY),
         .HRESP(HRESP), .HRDATA(HRDATA), .HBUSREQ(HBUSREQ[1]), .HLOCK(HLOCK[1]),
@@ -112,6 +125,7 @@ module ahb_top (
         .rdata_out(rdata_m3), .done(done_m3), .error_out(error_m3)
     );
 
+    // Khối điều phối trung tâm của bus.
     ahb_arbiter u_arbiter (
         .HCLK(HCLK), .HRESETn(HRESETn), .HBUSREQ(HBUSREQ), .HLOCK(HLOCK),
         .HREADY(HREADY), .HGRANT(HGRANT), .HMASTER(HMASTER), .HMASTLOCK(HMASTLOCK)
@@ -144,6 +158,7 @@ module ahb_top (
         .HRDATA(HRDATA), .HREADY(HREADY), .HRESP(HRESP)
     );
 
+    // Bốn bộ tớ RAM; S1 và S2 cho phép testbench buộc chèn chu kỳ chờ.
     ahb_slave #(.BASE_ADDR(32'h0000_0000)) u_slave0 (
         .HCLK(HCLK), .HRESETn(HRESETn), .HSEL(hsel_s0), .HADDR(HADDR),
         .HWRITE(HWRITE), .HSIZE(HSIZE), .HBURST(HBURST), .HTRANS(HTRANS),
@@ -165,7 +180,7 @@ module ahb_top (
         .HRDATA(hrdata_s2), .HREADY_OUT(hreadyout_s2), .HRESP(hresp_s2)
     );
 
-    // DDR mô phỏng 1KB tại đầu vùng S3.
+    // Bộ tớ S3 dùng RAM mô phỏng 1 KiB tại đầu vùng địa chỉ.
     ahb_slave #(.BASE_ADDR(32'h6000_0000), .MEM_DEPTH(256)) u_slave3 (
         .HCLK(HCLK), .HRESETn(HRESETn), .HSEL(hsel_s3), .HADDR(HADDR),
         .HWRITE(HWRITE), .HSIZE(HSIZE), .HBURST(HBURST), .HTRANS(HTRANS),
@@ -179,6 +194,7 @@ module ahb_top (
         .HRDATA(hrdata_def)
     );
 
+    // Đưa các tín hiệu bus quan trọng ra cổng quan sát.
     assign dbg_hmaster   = HMASTER;
     assign dbg_hgrant    = HGRANT;
     assign dbg_hready    = HREADY;

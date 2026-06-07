@@ -1,3 +1,4 @@
+// Kiểm tra ghi và đọc lại một từ dữ liệu.
 task test_single_transfers;
     begin
         $display("[KIỂM THỬ] Đọc và ghi đơn");
@@ -12,6 +13,7 @@ task test_single_transfers;
     end
 endtask
 
+// Kiểm tra ánh xạ làn dữ liệu cho byte và nửa từ.
 task test_data_lanes;
     begin
         $display("[KIỂM THỬ] Các làn byte và nửa từ");
@@ -33,6 +35,7 @@ task test_data_lanes;
     end
 endtask
 
+// Kiểm tra ERROR với địa chỉ lệch hàng và kích thước không hợp lệ.
 task test_invalid_transfers;
     begin
         $display("[KIỂM THỬ] Lỗi căn chỉnh và kích thước giao dịch");

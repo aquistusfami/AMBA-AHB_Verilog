@@ -10,19 +10,19 @@ module ahb_decoder (
     output wire        HSEL_DEFAULT
 );
 
-// Giải mã địa chỉ theo nibble cao.
+// Giải mã địa chỉ theo bốn bit cao HADDR[31:28].
 // Vùng chưa ánh xạ được chuyển tới bộ tớ mặc định.
 
-// ROM: 0x0000_0000 - 0x0FFF_FFFF.
+// Vùng RAM mô phỏng S0: 0x0000_0000 - 0x0FFF_FFFF.
 assign HSEL_S0 = (HADDR[31:28] == 4'h0);
 
-// SRAM: 0x2000_0000 - 0x2FFF_FFFF.
+// Vùng RAM mô phỏng S1: 0x2000_0000 - 0x2FFF_FFFF.
 assign HSEL_S1 = (HADDR[31:28] == 4'h2);
 
-// AHB-APB: 0x4000_0000 - 0x4FFF_FFFF.
+// Vùng RAM mô phỏng S2: 0x4000_0000 - 0x4FFF_FFFF.
 assign HSEL_S2 = (HADDR[31:28] == 4'h4);
 
-// DDR ngoài: 0x6000_0000 - 0x9FFF_FFFF.
+// Vùng RAM mô phỏng S3: 0x6000_0000 - 0x9FFF_FFFF.
 assign HSEL_S3 = (
     (HADDR[31:28] == 4'h6) || 
     (HADDR[31:28] == 4'h7) || 

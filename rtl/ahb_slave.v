@@ -24,7 +24,7 @@ module ahb_slave #(
     input  wire [3:0]  HPROT,        // Thuộc tính bảo vệ
     input  wire [31:0] HWDATA,       // Dữ liệu ghi
     input  wire        HREADY_IN,    // Bus sẵn sàng
-    input  wire        stall_req,     // Ép chu kỳ chờ
+    input  wire        stall_req,    // Ép chu kỳ chờ
 
     // Tín hiệu trả về bus.
     output reg  [31:0] HRDATA,       // Dữ liệu đọc
@@ -47,7 +47,6 @@ module ahb_slave #(
     reg [31:0] addr_lat;         // Địa chỉ
     reg        write_lat;        // Hướng truyền
     reg [2:0]  size_lat;         // Kích thước
-    reg        sel_lat;          // Chọn bộ tớ
     reg        trans_valid_lat;  // Truyền hợp lệ
 
     reg [3:0]  wait_cnt;         // Đếm chu kỳ chờ
@@ -74,15 +73,13 @@ module ahb_slave #(
             addr_lat        <= 32'h0;
             write_lat       <= 1'b0;
             size_lat        <= `AHB_HSIZE_WORD;
-            sel_lat         <= 1'b0;
             trans_valid_lat <= 1'b0;
         end else if (HREADY_IN) begin
             // Chỉ lấy mẫu khi bus sẵn sàng.
             addr_lat        <= HADDR;
             write_lat       <= HWRITE;
             size_lat        <= HSIZE;
-            sel_lat         <= HSEL;
-            // Tập con hiện tại chỉ hỗ trợ giao dịch NONSEQ đơn.
+            // Thiết kế hiện tại xử lý giao dịch đơn NONSEQ.
             trans_valid_lat <= HSEL && (HTRANS == `AHB_HTRANS_NONSEQ);
         end
     end
@@ -256,6 +253,7 @@ module ahb_slave #(
 
 endmodule
 
+// Bộ tớ mặc định trả phản hồi ERROR hai chu kỳ cho vùng chưa ánh xạ.
 module ahb_default_slave (
     input  wire       HCLK,
     input  wire       HRESETn,
@@ -267,6 +265,7 @@ module ahb_default_slave (
     output wire [31:0] HRDATA
 );
 
+    // Trạng thái pha dữ liệu và pha thứ hai của phản hồi ERROR.
     reg trans_valid_lat;
     reg err_phase2;
     reg hready_out_reg;
@@ -274,6 +273,7 @@ module ahb_default_slave (
 
     assign HRDATA = 32'h0;
 
+    // Kéo HREADY xuống trong chu kỳ đầu của phản hồi ERROR.
     always @(*) begin
         HREADY_OUT = hready_out_reg;
         HRESP      = hresp_reg;
@@ -284,6 +284,7 @@ module ahb_default_slave (
         end
     end
 
+    // Chốt giao dịch từ pha địa chỉ.
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
             trans_valid_lat <= 1'b0;
@@ -292,6 +293,7 @@ module ahb_default_slave (
         end
     end
 
+    // Tạo pha kết thúc ERROR với HREADY ở mức cao.
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
             hready_out_reg <= 1'b1;

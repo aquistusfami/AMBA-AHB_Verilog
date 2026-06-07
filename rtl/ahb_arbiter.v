@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+// Bộ phân xử cấp bus theo vòng tròn và giữ quyền khi bus chờ hoặc bị khóa.
 module ahb_arbiter #(
     parameter NUM_MASTERS    = 4,
     parameter DEFAULT_MASTER = 0
@@ -71,6 +72,7 @@ always @(*) begin
 
 end
 
+// Cập nhật bộ chủ hiện tại sau khi giao dịch trước hoàn tất.
 always @(posedge HCLK or negedge HRESETn) begin
     if (!HRESETn) begin
         current_master <= DEFAULT_MASTER[MASTER_W-1:0];
@@ -84,6 +86,7 @@ always @(posedge HCLK or negedge HRESETn) begin
     end
 end
 
+// Phát tín hiệu cấp bus dạng one-hot.
 always @(posedge HCLK or negedge HRESETn) begin
     if (!HRESETn) begin
         HGRANT <= ({{(NUM_MASTERS-1){1'b0}}, 1'b1} << DEFAULT_MASTER);
@@ -94,6 +97,7 @@ always @(posedge HCLK or negedge HRESETn) begin
     end
 end
 
+// Căn chỉnh HMASTER và HMASTLOCK với pha địa chỉ.
 always @(posedge HCLK or negedge HRESETn) begin
     if (!HRESETn) begin
         HMASTER   <= DEFAULT_MASTER[MASTER_W-1:0];

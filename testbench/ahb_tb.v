@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 
+// Testbench tổng hợp, cho phép chạy toàn bộ hoặc từng nhóm kiểm thử.
 module ahb_tb;
     integer run_all_tests;
     reg HCLK;
@@ -45,6 +46,7 @@ module ahb_tb;
     reg         response_phase2_pending;
     reg  [1:0]  response_pending;
 
+    // Khối thiết kế được kiểm thử.
     ahb_top dut (
         .HCLK(HCLK), .HRESETn(HRESETn),
         .cmd_start_m1(cmd_start_m1), .cmd_write_m1(cmd_write_m1), .cmd_lock_m1(cmd_lock_m1), .cmd_size_m1(cmd_size_m1),
@@ -62,17 +64,20 @@ module ahb_tb;
         .dbg_hmastlock(dbg_hmastlock)
     );
 
+    // Tạo xung nhịp chu kỳ 10 ns.
     initial begin
         HCLK = 1'b0;
         forever #5 HCLK = ~HCLK;
     end
 
+    // Ghép các khối giám sát, tiện ích và kịch bản kiểm thử.
     `include "ahb_tb_monitor.vh"
     `include "ahb_tb_tasks.vh"
     `include "tests/ahb_transfer_tests.vh"
     `include "tests/ahb_wait_error_tests.vh"
     `include "tests/ahb_multimaster_tests.vh"
 
+    // Chọn nhóm kiểm thử bằng plusarg; mặc định chạy tất cả.
     initial begin
         $dumpfile("ahb_wave.vcd");
         $dumpvars(0, ahb_tb);

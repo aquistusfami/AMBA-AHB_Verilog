@@ -99,7 +99,7 @@ module ahb_mux #(
     output wire [2:0]  HBURST,
     output wire [3:0]  HPROT,
 
-    // Tín hiệu trả về bộ chủ và bộ phân xử.
+    // Tín hiệu phản hồi chung trả về các bộ chủ.
 
     output wire [31:0] HRDATA,
     output wire        HREADY,
@@ -224,8 +224,8 @@ assign hready_global =
 
 assign HREADY = hready_global;
 
-    // Chọn phản hồi theo bộ tớ của pha dữ liệu.
-    assign HRESP =
+// Chọn phản hồi theo bộ tớ của pha dữ liệu.
+assign HRESP =
         (HSEL_S0_data)      ? HRESP_S0 :
         (HSEL_S1_data)      ? HRESP_S1 :
         (HSEL_S2_data)      ? HRESP_S2 :

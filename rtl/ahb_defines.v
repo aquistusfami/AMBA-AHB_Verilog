@@ -1,4 +1,4 @@
-// Định nghĩa hằng số cho tập con AHB được triển khai.
+// Các hằng số AHB được sử dụng trong thiết kế.
 
 `ifndef AHB_DEFINES_V
 `define AHB_DEFINES_V
