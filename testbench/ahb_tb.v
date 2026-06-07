@@ -71,11 +71,11 @@ module ahb_tb;
     end
 
     // Ghép các khối giám sát, tiện ích và kịch bản kiểm thử.
-    `include "ahb_tb_monitor.vh"
-    `include "ahb_tb_tasks.vh"
-    `include "tests/ahb_transfer_tests.vh"
-    `include "tests/ahb_wait_error_tests.vh"
-    `include "tests/ahb_multimaster_tests.vh"
+    `include "ahb_tb_monitor.v"
+    `include "ahb_tb_tasks.v"
+    `include "tests/ahb_transfer_tests.v"
+    `include "tests/ahb_wait_error_tests.v"
+    `include "tests/ahb_multimaster_tests.v"
 
     // Chọn nhóm kiểm thử bằng plusarg; mặc định chạy tất cả.
     initial begin

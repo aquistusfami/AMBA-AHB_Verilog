@@ -84,12 +84,12 @@ AMBA-AHB_Verilog/
 │   └── ahb_top.v           # Kết nối toàn hệ thống
 ├── testbench/
 │   ├── ahb_tb.v            # Testbench trên cùng và bộ chạy kiểm thử
-│   ├── ahb_tb_tasks.vh     # Tác vụ phát lệnh và chờ hoàn tất
-│   ├── ahb_tb_monitor.vh   # Kiểm tra giao thức dùng chung
+│   ├── ahb_tb_tasks.v      # Tác vụ phát lệnh và chờ hoàn tất
+│   ├── ahb_tb_monitor.v    # Kiểm tra giao thức dùng chung
 │   └── tests/
-│       ├── ahb_transfer_tests.vh
-│       ├── ahb_wait_error_tests.vh
-│       └── ahb_multimaster_tests.vh
+│       ├── ahb_transfer_tests.v
+│       ├── ahb_wait_error_tests.v
+│       └── ahb_multimaster_tests.v
 └── README.md
 ```
 
