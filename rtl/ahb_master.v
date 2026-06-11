@@ -97,11 +97,11 @@ module ahb_master (
                 end
 
                 ST_REQ: begin
-                    HBUSREQ <= 1'b1;
-                    HLOCK   <= lock_lat;
-                    HTRANS  <= `AHB_HTRANS_IDLE;
-
+                HLOCK   <= lock_lat;
+                HTRANS  <= `AHB_HTRANS_IDLE;
+                    
                     if (HGRANT && HREADY) begin
+                        HBUSREQ <= 1'b0;
                         HADDR  <= addr_lat;
                         HWRITE <= write_lat;
                         HSIZE  <= size_lat;
@@ -110,9 +110,11 @@ module ahb_master (
                         HTRANS <= `AHB_HTRANS_NONSEQ;
                         HWDATA <= wdata_lat;
                         state  <= ST_ADDR;
+                    end else begin
+                        HBUSREQ <= 1'b1;
                     end
                 end
-
+                
                 ST_ADDR: begin
                     HADDR  <= addr_lat;
                     HWRITE <= write_lat;
