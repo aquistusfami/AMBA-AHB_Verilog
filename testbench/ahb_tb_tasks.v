@@ -1,4 +1,6 @@
-// Các tác vụ phát lệnh và chờ hoàn tất dùng chung.
+// Các tác vụ tiện ích dùng để phát lệnh nhanh và chờ kết quả giao dịch hoàn tất
+
+// Xóa trắng toàn bộ tín hiệu lệnh của cả 3 Master
 task clear_cmds;
     begin
         cmd_start_m1 = 0; cmd_write_m1 = 0; cmd_lock_m1 = 0; cmd_addr_m1 = 0; cmd_wdata_m1 = 0;
@@ -9,6 +11,7 @@ task clear_cmds;
     end
 endtask
 
+// Đặt lại hệ thống (Reset) và đảm bảo bus thuộc về Master 0 mặc định
 task reset_dut;
     begin
         clear_cmds();
@@ -21,6 +24,7 @@ task reset_dut;
     end
 endtask
 
+// Phát lệnh ghi/đọc kích thước Word 32-bit từ Master 1
 task pulse_m1;
     input [31:0] addr;
     input [31:0] data;
@@ -31,6 +35,7 @@ task pulse_m1;
     end
 endtask
 
+// Phát lệnh ghi/đọc với kích thước tùy cấu hình (Byte/Half-word/Word) từ Master 1
 task pulse_m1_size;
     input [31:0] addr;
     input [31:0] data;
@@ -46,6 +51,7 @@ task pulse_m1_size;
     end
 endtask
 
+// Phát lệnh ghi/đọc kích thước Word 32-bit từ Master 2
 task pulse_m2;
     input [31:0] addr;
     input [31:0] data;
@@ -60,6 +66,7 @@ task pulse_m2;
     end
 endtask
 
+// Chờ giao dịch của Master 1 hoàn thành (done hoặc error), tích hợp timeout 80 chu kỳ clock
 task wait_done_or_error_m1;
     integer cycles;
     begin
@@ -71,6 +78,7 @@ task wait_done_or_error_m1;
     end
 endtask
 
+// Chờ giao dịch của Master 2 hoàn thành
 task wait_done_or_error_m2;
     integer cycles;
     begin
@@ -82,6 +90,7 @@ task wait_done_or_error_m2;
     end
 endtask
 
+// Chờ giao dịch của Master 3 hoàn thành
 task wait_done_or_error_m3;
     integer cycles;
     begin
@@ -93,6 +102,7 @@ task wait_done_or_error_m3;
     end
 endtask
 
+// Đợi tín hiệu HREADY bị kéo thấp (bắt bus chờ)
 task expect_hready_low;
     integer cycles;
     integer seen_low;
@@ -107,6 +117,7 @@ task expect_hready_low;
     end
 endtask
 
+// Đợi tín hiệu khóa HMASTLOCK được kéo lên cao
 task expect_hmastlock_high;
     integer cycles;
     integer seen_lock;

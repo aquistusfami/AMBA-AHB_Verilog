@@ -1,4 +1,6 @@
-// Kiểm tra phân xử khi ba bộ chủ yêu cầu bus đồng thời.
+// Kịch bản kiểm thử phân xử đa bộ chủ (Multi-master) và khóa bus (HLOCK)
+
+// Kiểm tra thuật toán Round-Robin khi 3 Master yêu cầu bus đồng thời
 task test_arbitration;
     begin
         $display("[KIỂM THỬ] Phân xử nhiều bộ chủ");
@@ -8,6 +10,7 @@ task test_arbitration;
         cmd_addr_m3 <= 32'h2000_0018; cmd_wdata_m3 <= 32'h3333_3333; cmd_write_m3 <= 1'b1; cmd_start_m3 <= 1'b1;
         @(posedge HCLK);
         cmd_start_m1 <= 1'b0; cmd_start_m2 <= 1'b0; cmd_start_m3 <= 1'b0;
+        
         fork
             wait_done_or_error_m1();
             wait_done_or_error_m2();
@@ -23,7 +26,7 @@ task test_arbitration;
     end
 endtask
 
-// Kiểm tra quyền sở hữu bus trong giao dịch có khóa.
+// Kiểm tra quyền sở hữu độc quyền của Master 1 khi thực hiện giao dịch khóa (HLOCK)
 task test_locked_transfer;
     begin
         $display("[KIỂM THỬ] Giao dịch khóa");
@@ -32,13 +35,16 @@ task test_locked_transfer;
         cmd_write_m1 <= 1'b1; cmd_lock_m1 <= 1'b1; cmd_start_m1 <= 1'b1;
         @(posedge HCLK);
         cmd_start_m1 <= 1'b0;
+        
+        // M2 yêu cầu dùng bus trong khi M1 đang khóa bus -> M2 phải đợi
         cmd_addr_m2 <= 32'h4000_0024; cmd_wdata_m2 <= 32'h8888_8888;
         cmd_write_m2 <= 1'b1; cmd_start_m2 <= 1'b1;
         @(posedge HCLK);
         cmd_start_m2 <= 1'b0;
+        
         expect_hmastlock_high();
         wait_done_or_error_m1();
-        cmd_lock_m1 <= 1'b0;
+        cmd_lock_m1 <= 1'b0; // M1 nhả khóa -> M2 được cấp bus
         wait_done_or_error_m2();
     end
 endtask

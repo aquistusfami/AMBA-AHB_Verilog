@@ -1,7 +1,9 @@
-// Kiểm tra ghi và đọc lại một từ dữ liệu.
+// Kịch bản kiểm thử các giao dịch cơ bản và định tuyến làn dữ liệu (Data Lanes)
+
+// Kiểm tra ghi một từ Word 32-bit và đọc ngược lại để so sánh
 task test_single_transfers;
     begin
-        $display("[KIỂM THỬ] Đọc và ghi đơn");
+        $display("[KIỂM THỬ] Đọc và ghi đơn lẻ");
         pulse_m1(32'h2000_0004, 32'hDEAD_BEEF, 1'b1, 1'b0);
         wait_done_or_error_m1();
         if (!done_m1 || error_m1) $fatal(1, "M1 ghi vào S1 thất bại");
@@ -13,7 +15,7 @@ task test_single_transfers;
     end
 endtask
 
-// Kiểm tra ánh xạ làn dữ liệu cho byte và nửa từ.
+// Kiểm tra ánh xạ đúng làn dữ liệu khi ghi/đọc byte và nửa từ (Little-endian)
 task test_data_lanes;
     begin
         $display("[KIỂM THỬ] Các làn byte và nửa từ");
@@ -35,16 +37,19 @@ task test_data_lanes;
     end
 endtask
 
-// Kiểm tra ERROR với địa chỉ lệch hàng và kích thước không hợp lệ.
+// Kiểm tra Slave phản hồi ERROR khi Master truy cập lệch biên địa chỉ hoặc size quá 32-bit
 task test_invalid_transfers;
     begin
         $display("[KIỂM THỬ] Lỗi căn chỉnh và kích thước giao dịch");
+        // Test Half-word lệch biên (địa chỉ lẻ) -> phải trả ERROR
         pulse_m1_size(32'h2000_0021, 32'h0, 1'b0, 1'b0, 3'b001); wait_done_or_error_m1();
         if (!error_m1 || done_m1) $fatal(1, "Giao dịch nửa từ không căn chỉnh không trả về ERROR");
 
+        // Test Word lệch biên (địa chỉ không chia hết cho 4) -> phải trả ERROR
         pulse_m1_size(32'h2000_0022, 32'h0, 1'b0, 1'b0, 3'b010); wait_done_or_error_m1();
         if (!error_m1 || done_m1) $fatal(1, "Giao dịch từ không căn chỉnh không trả về ERROR");
 
+        // Test kích thước truyền lớn hơn bus -> phải trả ERROR
         pulse_m1_size(32'h2000_0020, 32'h0, 1'b0, 1'b0, 3'b011); wait_done_or_error_m1();
         if (!error_m1 || done_m1) $fatal(1, "Giao dịch rộng hơn bus 32 bit không trả về ERROR");
     end
